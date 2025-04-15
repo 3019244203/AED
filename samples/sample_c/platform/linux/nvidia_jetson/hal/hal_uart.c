@@ -65,6 +65,8 @@ T_DjiReturnCode HalUart_Init(E_DjiHalUartNum uartNum, uint32_t baudRate, T_DjiUa
     } else {
         goto free_uart_handle;
     }
+    
+    printf("uartName-----%s---\n", uartName);
 
 #ifdef USE_CLION_DEBUG
     sprintf(systemCmd, "ls -l %s", uartName);

@@ -69,6 +69,8 @@ T_DjiReturnCode HalNetWork_Init(const char *ipAddr, const char *netMask, T_DjiNe
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
 
+    printf("net address: %s, netMask: %s\n", ipAddr, netMask);
+    
     return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
 }
 
@@ -82,6 +84,7 @@ T_DjiReturnCode HalNetWork_GetDeviceInfo(T_DjiHalNetworkDeviceInfo *deviceInfo)
     deviceInfo->usbNetAdapter.vid = USB_NET_ADAPTER_VID;
     deviceInfo->usbNetAdapter.pid = USB_NET_ADAPTER_PID;
 
+    printf("kyle test: VID[%x], PID[%x]\n", USB_NET_ADAPTER_VID, USB_NET_ADAPTER_PID);
     return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
 }
 

@@ -29,17 +29,18 @@
 #include <utils/util_misc.h>
 #include <errno.h>
 #include <signal.h>
-#include <power_management/test_power_management.h>
-#include <gimbal_emu/test_payload_gimbal_emu.h>
+// #include <power_management/test_power_management.h>
+// #include <gimbal_emu/test_payload_gimbal_emu.h>
 #include <fc_subscription/test_fc_subscription.h>
-#include <camera_emu/test_payload_cam_emu_media.h>
-#include <camera_emu/test_payload_cam_emu_base.h>
+// #include <camera_emu/test_payload_cam_emu_media.h>
+// #include <camera_emu/test_payload_cam_emu_base.h>
 #include <upgrade/test_upgrade.h>
 #include <upgrade_platform_opt/upgrade_platform_opt_linux.h>
-#include <mop_channel/test_mop_channel.h>
+// #include <mop_channel/test_mop_channel.h>
 #include <payload_collaboration/test_payload_collaboration.h>
-#include <xport/test_payload_xport.h>
-#include <hms/test_hms.h>
+// #include <xport/test_payload_xport.h>
+// #include <hms/test_hms.h>
+// #include <liveview/test_liveview.h>
 #include "monitor/sys_monitor.h"
 #include "osal/osal.h"
 #include "osal/osal_fs.h"
@@ -49,11 +50,16 @@
 #include "../hal/hal_usb_bulk.h"
 #include "dji_sdk_app_info.h"
 #include "dji_aircraft_info.h"
-#include "widget/test_widget.h"
-#include "widget/test_widget_speaker.h"
-#include "widget_interaction_test/test_widget_interaction.h"
-#include "data_transmission/test_data_transmission.h"
+// #include "widget/test_widget.h"
+// #include "widget/test_widget_speaker.h"
+// #include "widget_interaction_test/test_widget_interaction.h"
+// #include "data_transmission/test_data_transmission.h"
 #include "dji_sdk_config.h"
+
+#include "MQTTClient.h"
+#include "MQTTAsync.h"
+#include "../Mine/mqtt_function.h"
+#include "cjson/cJSON.h"
 
 /* Private constants ---------------------------------------------------------*/
 #define DJI_LOG_PATH                    "Logs/DJI"
@@ -66,6 +72,9 @@
 #define DJI_SYSTEM_RESULT_STR_MAX_SIZE  (128)
 
 #define DJI_USE_WIDGET_INTERACTION       0
+#define INTERVAL 1 // 每隔1秒发布一次
+#define TOPIC_SEND       "gcs_pub/1/state"
+#define MAX_JSON_STRING_LENGTH 1024 // 根据实际情况调整大小
 
 /* Private types -------------------------------------------------------------*/
 typedef struct {
@@ -87,12 +96,70 @@ static T_DjiReturnCode DjiUser_LocalWrite(const uint8_t *data, uint16_t dataLen)
 static T_DjiReturnCode DjiUser_LocalWriteFsInit(const char *path);
 static void *DjiUser_MonitorTask(void *argument);
 static T_DjiReturnCode DjiTest_HighPowerApplyPinInit();
-static T_DjiReturnCode DjiTest_WriteHighPowerApplyPin(E_DjiPowerManagementPinState pinState);
+// static T_DjiReturnCode DjiTest_WriteHighPowerApplyPin(E_DjiPowerManagementPinState pinState);
 static void DjiUser_NormalExitHandler(int signalNum);
+static void publish_status(MQTTAsync client);
+
+// static MQTTClient client;
+// static MQTTClient_connectOptions connOpts;
+// static MQTTClient_message pubmsg;
+// static MQTTClient_deliveryToken token;
+
+static MQTTAsync client;
+static MQTTAsync_connectOptions conn_opts = MQTTAsync_connectOptions_initializer;
+static MQTTAsync_disconnectOptions disc_opts = MQTTAsync_disconnectOptions_initializer;
+static MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
+static MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
+// 声明一个全局指针，但不在此处初始化
+static cJSON *root = NULL;
+static char jsonBuffer[MAX_JSON_STRING_LENGTH];
 
 /* Exported functions definition ---------------------------------------------*/
 int main(int argc, char **argv)
 {
+
+    printf("The value of myVariable is: %d\n", disc_finished);
+    // 在main函数内初始化该指针
+    root = cJSON_CreateObject();
+    int rc;
+    // 初始化MQTT客户端
+    // MQTTClient_create(&client, "mqtt://10.51.128.128:1883", "myClientID", MQTTCLIENT_PERSISTENCE_NONE, NULL);
+    if((rc = MQTTAsync_create(&client, ADDRESS, CLIENTID,  MQTTCLIENT_PERSISTENCE_NONE, NULL)) != MQTTASYNC_SUCCESS)
+    {
+        printf("Failed to create client, return code %d\n", rc);
+        rc = EXIT_FAILURE;
+        return rc;
+    }
+    if((rc = MQTTAsync_setCallbacks(client, client, connlost, msgarrvd, NULL)) != MQTTASYNC_SUCCESS)
+    {
+		printf("Failed to set callbacks, return code %d\n", rc);
+		rc = EXIT_FAILURE;
+		MQTTAsync_destroy(&client);
+	}
+    // 设置连接选项
+    conn_opts.keepAliveInterval = 20;
+	conn_opts.cleansession = 1;
+	conn_opts.username = USERNAME;
+	conn_opts.password = PASSWORD;
+	conn_opts.onSuccess = onConnect;
+	conn_opts.onFailure = onConnectFailure;
+	conn_opts.context = client;
+    // 连接到MQTT代理
+    // MQTTClient_connect(client, &connOpts);
+    if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS)
+	{
+		printf("Failed to start connect, return code %d\n", rc);
+		rc = EXIT_FAILURE;
+		MQTTAsync_destroy(&client);
+	} else {
+		printf("---------------------Successfully start connect, return code-------------------------------- %d\n", rc);
+	}
+	printf("--connect finish, %d; Subscribe succeed, %d; Successful disconnect, %d\n", finished, subscribed, disc_finished);
+
+    // 订阅主题
+    // MQTTClient_subscribe(client, "gcs_receive/1/target_pos", 2);
+
+
     T_DjiReturnCode returnCode;
     T_DjiUserInfo userInfo;
     T_DjiAircraftInfoBaseInfo aircraftInfoBaseInfo;
@@ -146,18 +213,20 @@ int main(int argc, char **argv)
                         aircraftInfoVersion.debugVersion);
     }
 
-    returnCode = DjiCore_SetAlias("PSDK_APPALIAS");
+    returnCode = DjiCore_SetAlias("AED");
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         USER_LOG_ERROR("set alias error");
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
 
+    // 为 DJI 应用或产品设置一个自定义的固件版本。负载固件版本会始终显示在 DJI Pilot 负载设置界面上
     returnCode = DjiCore_SetFirmwareVersion(firmwareVersion);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         USER_LOG_ERROR("set firmware version error");
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
 
+    // 为 DJI 应用或产品设置一个自定义的序列号。
     returnCode = DjiCore_SetSerialNumber("PSDK12345678XX");
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         USER_LOG_ERROR("set serial number error");
@@ -165,100 +234,80 @@ int main(int argc, char **argv)
     }
 
     /*!< Step 4: Initialize the selected modules by macros in dji_sdk_config.h . */
-#ifdef CONFIG_MODULE_SAMPLE_POWER_MANAGEMENT_ON
-    T_DjiTestApplyHighPowerHandler applyHighPowerHandler = {
-        .pinInit = DjiTest_HighPowerApplyPinInit,
-        .pinWrite = DjiTest_WriteHighPowerApplyPin,
-    };
+// #ifdef CONFIG_MODULE_SAMPLE_POWER_MANAGEMENT_ON
+//     T_DjiTestApplyHighPowerHandler applyHighPowerHandler = {
+//         .pinInit = DjiTest_HighPowerApplyPinInit,
+//         .pinWrite = DjiTest_WriteHighPowerApplyPin,
+//     };
 
-    returnCode = DjiTest_RegApplyHighPowerHandler(&applyHighPowerHandler);
-    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("regsiter apply high power handler error");
-    }
+//     returnCode = DjiTest_RegApplyHighPowerHandler(&applyHighPowerHandler);
+//     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+//         USER_LOG_ERROR("regsiter apply high power handler error");
+//     }
 
-    returnCode = DjiTest_PowerManagementStartService();
-    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("power management init error");
-    }
-#endif
+//     returnCode = DjiTest_PowerManagementStartService();
+//     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+//         USER_LOG_ERROR("power management init error");
+//     }
+// #endif
 
-#ifdef CONFIG_MODULE_SAMPLE_DATA_TRANSMISSION_ON
-    returnCode = DjiTest_DataTransmissionStartService();
-    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("widget sample init error");
-    }
-#endif
+// #ifdef CONFIG_MODULE_SAMPLE_DATA_TRANSMISSION_ON
+//     returnCode = DjiTest_DataTransmissionStartService();
+//     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+//         USER_LOG_ERROR("widget sample init error");
+//     }
+// #endif
 
     if (aircraftInfoBaseInfo.mountPosition == DJI_MOUNT_POSITION_EXTENSION_PORT &&
         aircraftInfoBaseInfo.aircraftType == DJI_AIRCRAFT_TYPE_M300_RTK) {
-        returnCode = DjiTest_WidgetInteractionStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("widget interaction sample init error");
-        }
+        printf("LLLLLLLLLLLLLLLL************************************\n");
+        //returnCode = DjiTest_WidgetInteractionStartService();
+        //if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //USER_LOG_ERROR("widget interaction sample init error");
+        //}
 
-        returnCode = DjiTest_WidgetSpeakerStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("widget speaker test init error");
-        }
-    } else {
-#ifdef CONFIG_MODULE_SAMPLE_CAMERA_EMU_ON
-        returnCode = DjiTest_CameraEmuBaseStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("camera emu common init error");
-        }
-#endif
-
-#ifdef CONFIG_MODULE_SAMPLE_CAMERA_MEDIA_ON
-        returnCode = DjiTest_CameraEmuMediaStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("camera emu media init error");
-        }
-#endif
+        //returnCode = DjiTest_WidgetSpeakerStartService();
+        //if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //USER_LOG_ERROR("widget speaker test init error");
+        //}
+    } 
+    else {
 
 #ifdef CONFIG_MODULE_SAMPLE_FC_SUBSCRIPTION_ON
-        returnCode = DjiTest_FcSubscriptionStartService();
+        returnCode = DjiTest_FcSubscriptionStartService((void*) client);
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
             USER_LOG_ERROR("data subscription sample init error\n");
         }
 #endif
 
-#ifdef CONFIG_MODULE_SAMPLE_GIMBAL_EMU_ON
-        if (aircraftInfoBaseInfo.djiAdapterType == DJI_SDK_ADAPTER_TYPE_SKYPORT_V2 ||
-            aircraftInfoBaseInfo.djiAdapterType == DJI_SDK_ADAPTER_TYPE_NONE) {
-            if (DjiTest_GimbalStartService() != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-                USER_LOG_ERROR("psdk gimbal init error");
-            }
-        }
-#endif
+// #ifdef CONFIG_MODULE_SAMPLE_LIVEVIEW_ON
+//         returnCode = DjiTest_LiveviewRunSample();
+//         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+//             USER_LOG_ERROR("live view sample init error\n");
+//         }
+// #endif
 
-#ifdef CONFIG_MODULE_SAMPLE_XPORT_ON
-        if (aircraftInfoBaseInfo.djiAdapterType == DJI_SDK_ADAPTER_TYPE_XPORT) {
-            if (DjiTest_XPortStartService() != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-                USER_LOG_ERROR("psdk xport init error");
-            }
-        }
-#endif
 
-#ifdef CONFIG_MODULE_SAMPLE_WIDGET_ON
-#if DJI_USE_WIDGET_INTERACTION
-        returnCode = DjiTest_WidgetInteractionStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("widget interaction test init error");
-        }
-#else
-        returnCode = DjiTest_WidgetStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("widget sample init error");
-        }
-#endif
-#endif
+// #ifdef CONFIG_MODULE_SAMPLE_WIDGET_ON
+// #if DJI_USE_WIDGET_INTERACTION
+//         returnCode = DjiTest_WidgetInteractionStartService();
+//         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+//             USER_LOG_ERROR("widget interaction test init error");
+//         }
+// #else
+//         returnCode = DjiTest_WidgetStartService();
+//         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+//             USER_LOG_ERROR("widget sample init error");
+//         }
+// #endif
+// #endif
 
-#ifdef CONFIG_MODULE_SAMPLE_WIDGET_SPEAKER_ON
-        returnCode = DjiTest_WidgetSpeakerStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("widget speaker test init error");
-        }
-#endif
+// #ifdef CONFIG_MODULE_SAMPLE_WIDGET_SPEAKER_ON
+//         returnCode = DjiTest_WidgetSpeakerStartService();
+//         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+//             USER_LOG_ERROR("widget speaker test init error");
+//         }
+// #endif
 
 #ifdef CONFIG_MODULE_SAMPLE_MOP_CHANNEL_ON
         returnCode = DjiTest_MopChannelStartService();
@@ -301,12 +350,12 @@ int main(int argc, char **argv)
         }
 #endif
 
-#ifdef CONFIG_MODULE_SAMPLE_HMS_CUSTOMIZATION_ON
-        returnCode = DjiTest_HmsCustomizationStartService();
-        if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("hms test init error");
-        }
-#endif
+// #ifdef CONFIG_MODULE_SAMPLE_HMS_CUSTOMIZATION_ON
+        // returnCode = DjiTest_HmsCustomizationStartService();
+        // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            // USER_LOG_ERROR("hms test init error");
+        // }
+// #endif
     }
 
     /*!< Step 5: Tell the DJI Pilot you are ready. */
@@ -323,9 +372,71 @@ int main(int argc, char **argv)
         USER_LOG_ERROR("set name for monitor task fail.");
     }
 
+    // 创建一个循环来定期发布状态信息
     while (1) {
-        sleep(1);
+        sleep(INTERVAL); // 等待一段时间
+        publish_status(client); // 发布无人机状态信息
     }
+
+    // 清理资源并退出
+    MQTTAsync_destroy(&client);
+    cJSON_Delete(root);
+    return EXIT_SUCCESS;
+
+    // while (1) {
+    //     sleep(1);
+    // }
+}
+
+void publish_status(MQTTAsync client) {
+
+    // cJSON *root = cJSON_CreateObject();
+    // 清空之前的JSON对象内容
+    cJSON_DeleteItemFromObject(root, "longitude");
+    cJSON_DeleteItemFromObject(root, "latitude");
+    cJSON_DeleteItemFromObject(root, "relative_height");
+    cJSON_DeleteItemFromObject(root, "process");
+    
+    pthread_mutex_lock(&statusMutex); // 加锁以保护对共享资源的访问
+    // 添加RTK位置信息
+    cJSON_AddNumberToObject(root, "longitude", droneStatus.rtkLongitude);
+    cJSON_AddNumberToObject(root, "latitude", droneStatus.rtkLatitude);
+    cJSON_AddNumberToObject(root, "relative_height", droneStatus.relativeHeight);
+    // 添加进度信息
+    cJSON_AddNumberToObject(root, "process", droneStatus.process);
+    pthread_mutex_unlock(&statusMutex); // 解锁
+
+    // 将cJSON对象转换为字符串并发布到MQTT主题...
+    // 将cJSON对象转换为字符串
+    // char *jsonString = cJSON_PrintUnformatted(root); // 或者使用cJSON_Print获得格式化的输出
+    // if (jsonString == NULL) {
+        // USER_LOG_ERROR("Failed to create JSON string.");
+        // cJSON_Delete(root);
+        // return;
+    // }
+    // 直接将JSON写入预分配的缓冲区
+    cJSON_PrintPreallocated(root, jsonBuffer, sizeof(jsonBuffer), false);
+
+    int rc;
+    pubmsg.payload = (void *)jsonBuffer;;
+    pubmsg.payloadlen = strlen(jsonBuffer);
+    pubmsg.qos = QOS;
+    pubmsg.retained = 0;
+
+    pthread_mutex_lock(&mqtt_publish_mutex);
+    printf("----connect finish, %d; Subscribe succeed, %d; Successful disconnect, %d\n", finished, subscribed, disc_finished);
+    if ((rc = MQTTAsync_sendMessage(client, TOPIC_SEND, &pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
+        printf("main.c-------------------publish_status--------\n");
+        printf("Failed to start sendMessage, return code %d\n", rc);
+    } else {
+        printf("Message published\n");
+    }
+    pthread_mutex_unlock(&mqtt_publish_mutex);
+
+
+    // 清理资源
+    // cJSON_Delete(root);
+    // free(jsonString); // cJSON_PrintUnformatted分配的内存需要手动释放
 }
 
 /* Private functions definition-----------------------------------------------*/
@@ -692,11 +803,11 @@ static T_DjiReturnCode DjiTest_HighPowerApplyPinInit()
     return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
 }
 
-static T_DjiReturnCode DjiTest_WriteHighPowerApplyPin(E_DjiPowerManagementPinState pinState)
-{
-    //attention: please pull up the HWPR pin state by hardware.
-    return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
-}
+// static T_DjiReturnCode DjiTest_WriteHighPowerApplyPin(E_DjiPowerManagementPinState pinState)
+// {
+    // //attention: please pull up the HWPR pin state by hardware.
+    // return DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS;
+// }
 
 static void DjiUser_NormalExitHandler(int signalNum)
 {

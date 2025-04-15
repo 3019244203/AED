@@ -29,17 +29,23 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "dji_typedef.h"
+// #include <pthread.h>
+
+// typedef struct {
+//     cJSON *data;
+//     MQTTAsync client;
+// } ThreadParams;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Exported constants --------------------------------------------------------*/
-
+// pthread_mutex_t missionMutex = PTHREAD_MUTEX_INITIALIZER;
 /* Exported types ------------------------------------------------------------*/
 
 /* Exported functions --------------------------------------------------------*/
-T_DjiReturnCode DjiTest_WaypointV2RunSample(void);
+void *DjiTest_WaypointV2RunSample(void* arg);
 
 #ifdef __cplusplus
 }

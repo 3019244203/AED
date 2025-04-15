@@ -38,10 +38,11 @@ file(GLOB_RECURSE MODULE_COMMON_SRC ../common/*.c)
 file(GLOB_RECURSE MODULE_HAL_SRC hal/*.c)
 file(GLOB_RECURSE MODULE_APP_SRC application/*.c)
 file(GLOB_RECURSE MODULE_SAMPLE_SRC ../../../module_sample/*.c)
+file(GLOB_RECURSE MODULE_MINE_SRC Mine/*.c)
 
 include_directories(../../../module_sample)
 include_directories(../common)
-include_directories(../manifold2/application)
+include_directories(application)
 
 include_directories(../../../../../psdk_lib/include)
 link_directories(../../../../../psdk_lib/lib/${TOOLCHAIN_NAME})
@@ -55,7 +56,8 @@ add_executable(${PROJECT_NAME}
         ${MODULE_APP_SRC}
         ${MODULE_SAMPLE_SRC}
         ${MODULE_COMMON_SRC}
-        ${MODULE_HAL_SRC})
+        ${MODULE_HAL_SRC}
+        ${MODULE_MINE_SRC})
 
 set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../common/3rdparty)
 find_package(OPUS REQUIRED)
@@ -81,6 +83,26 @@ if (LIBUSB_FOUND)
 else ()
     message(STATUS "Cannot Find LIBUSB")
 endif (LIBUSB_FOUND)
+
+# 查找MQTT库
+find_path(MQTT_INCLUDE_DIR NAMES MQTTAsync.h PATHS /usr/include /usr/local/include)
+find_library(MQTT_LIBRARY NAMES paho-mqtt3a paho-mqtt3c PATHS /usr/lib /usr/local/lib)
+
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(MQTT DEFAULT_MSG MQTT_INCLUDE_DIR MQTT_LIBRARY)
+
+if (MQTT_FOUND)
+    message(STATUS "Found MQTT installed in the system")
+    message(STATUS " - Includes: ${MQTT_INCLUDE_DIR}")
+    message(STATUS " - Libraries: ${MQTT_LIBRARY}")
+
+    add_definitions(-DMQTT_INSTALLED)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${MQTT_INCLUDE_DIR})
+    target_link_libraries(${PROJECT_NAME} ${MQTT_LIBRARY})
+else ()
+    message(STATUS "Cannot Find MQTT")
+endif (MQTT_FOUND)
+
 
 target_link_libraries(${PROJECT_NAME} m)
 

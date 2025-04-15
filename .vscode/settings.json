@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        "test_payload_xport.h": "c",
+        "test_payload_collaboration.h": "c",
+        "osal_socket.h": "c",
+        "dji_sdk_app_info.h": "c",
+        "dji_flight_controller.h": "c"
+    }
+}

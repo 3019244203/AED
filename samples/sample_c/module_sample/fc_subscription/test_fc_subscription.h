@@ -30,6 +30,31 @@
 /* Includes ------------------------------------------------------------------*/
 #include "dji_typedef.h"
 #include "dji_fc_subscription.h"
+#include <pthread.h>
+#include "cjson/cJSON.h"
+#include <MQTTAsync.h>
+#define RADIUS_EARTH 6371000 // 地球半径，单位：米
+#define M_PI		3.14159265358979323846
+#define TOPIC_REPLY       "gcs_reply/1/progress"
+#define QOS         2
+
+typedef struct {
+    dji_f64_t rtkLongitude;
+    dji_f64_t rtkLatitude; 
+    dji_f32_t relativeHeight;
+    float process;
+} DroneStatus;
+
+// typedef struct {
+//     dji_f64_t homeLongitude;
+//     dji_f64_t homeLatitude;
+// } HomePoint;
+
+typedef struct {
+    cJSON *data;
+    MQTTAsync client;
+} ThreadParams;
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,15 +62,29 @@ extern "C" {
 
 /* Exported constants --------------------------------------------------------*/
 
-
 /* Exported types ------------------------------------------------------------*/
-
+extern uint8_t is_RTK_ready;
+extern uint8_t remainingBattery;
+extern DroneStatus droneStatus;
+// HomePoint homePoint;
+extern pthread_mutex_t statusMutex;
+// pthread_mutex_t homeMutex;
+extern bool finishedMission;
+extern pthread_mutex_t mqtt_publish_mutex;
+extern bool isin_mission;
+extern dji_f64_t schedule;
+extern dji_f64_t targetLat, targetLon;
+extern uint8_t userID;
+extern bool stationary;
+extern bool stopview;
+extern dji_f64_t distance_safe;
 
 /* Exported functions --------------------------------------------------------*/
-T_DjiReturnCode DjiTest_FcSubscriptionStartService(void);
+T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg);
 T_DjiReturnCode DjiTest_FcSubscriptionRunSample(void);
 T_DjiReturnCode DjiTest_FcSubscriptionDataShowTrigger(void);
 T_DjiReturnCode DjiTest_FcSubscriptionGetTotalSatelliteNumber(uint8_t *number);
+void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, int gateway);
 
 #ifdef __cplusplus
 }
