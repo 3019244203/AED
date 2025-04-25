@@ -6,12 +6,14 @@
 #include <waypoint_v2/test_waypoint_v2.h>
 #include <math.h>
 #include "dji_logger.h"
-#include <dji_flight_controller.h>
 #include <dji_aircraft_info.h>
+#include <liveview/test_liveview.h>
 // #define RADIUS_EARTH 6371000 // 地球半径，单位：米
 // #define M_PI		3.14159265358979323846
+#define DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE   (1024)
 
-// static bool DjiTest_FlightControlGoHomeAndConfirmLanding(void);
+
+static T_DjiTaskHandle s_gohomeForcelandThread;
 
 int finished = 0;
 int subscribed = 0;
@@ -36,93 +38,6 @@ float calculateGreatCircleDistance(double lat1, double lon1, double lat2, double
     return distance;
 }
 
-// bool DjiTest_FlightControlGoHomeAndConfirmLanding(void)
-// {
-//     T_DjiReturnCode djiStat;
-//     T_DjiAircraftInfoBaseInfo aircraftInfoBaseInfo;
-//     E_DjiFlightControllerObstacleAvoidanceEnableStatus enableStatus;
-//     djiStat = DjiFlightController_GetDownwardsVisualObstacleAvoidanceEnableStatus(&enableStatus);
-//     if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-//         USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error");
-//     }
-//     djiStat = DjiAircraftInfo_GetBaseInfo(&aircraftInfoBaseInfo);
-//     if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-//         USER_LOG_ERROR("get aircraft base info error");
-//     }
-//     /*! Step 1: Start go home */
-//     USER_LOG_INFO("Start go home action");
-//     djiStat = DjiFlightController_StartGoHome();
-//     if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-//         USER_LOG_ERROR("Start to go home failed, error code: 0x%08X", djiStat);
-//         return false;;
-//     }
-//     if (!DjiTest_FlightControlCheckActionStarted(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME)) {
-//         return false;
-//     } else {
-//         while (DjiTest_FlightControlGetValueOfFlightStatus() == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
-//                DjiTest_FlightControlGetValueOfDisplayMode() == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME) {
-//             s_osalHandler->TaskSleepMs(1000);// waiting for this action finished
-//         }
-//     }
-//     /*! Step 2: Start landing */
-//     USER_LOG_INFO("Start landing action");
-//     if (!DjiTest_FlightControlCheckActionStarted(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)) {
-//         USER_LOG_ERROR("Fail to execute Landing action");
-//         return false;
-//     } else {
-//         while (DjiTest_FlightControlGetValueOfDisplayMode() == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING &&
-//                DjiTest_FlightControlGetValueOfFlightStatus() == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
-//             T_DjiFcSubscriptionHeightFusion heightFusion = DjiTest_FlightControlGetValueOfHeightFusion();
-//             s_osalHandler->TaskSleepMs(1000);
-//             if (aircraftInfoBaseInfo.aircraftType == DJI_AIRCRAFT_TYPE_M3E ||
-//                 aircraftInfoBaseInfo.aircraftType == DJI_AIRCRAFT_TYPE_M3T ||
-//                 aircraftInfoBaseInfo.aircraftType == DJI_AIRCRAFT_TYPE_M3D ||
-//                 aircraftInfoBaseInfo.aircraftType == DJI_AIRCRAFT_TYPE_M3TD) {
-//                 if ((dji_f64_t) 0.45 < heightFusion && heightFusion < (dji_f64_t) 0.55) {
-//                     break;
-//                 }
-//             } else {
-//                 if ((dji_f64_t) 0.65 < heightFusion && heightFusion < (dji_f64_t) 0.75) {
-//                     break;
-//                 }
-//             }
-//         }
-//     }
-//     /*! Step 4: Confirm Landing */
-//     USER_LOG_INFO("Start confirm Landing and avoid ground action");
-//     djiStat = DjiFlightController_StartConfirmLanding();
-//     if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-//         USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", djiStat);
-//         return false;
-//     }
-//     if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
-//         if (!DjiTest_FlightControlCheckActionStarted(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)) {
-//             return false;
-//         } else {
-//             while (DjiTest_FlightControlGetValueOfFlightStatus() == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
-//                    DjiTest_FlightControlGetValueOfDisplayMode() ==
-//                    DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING) {
-//                 s_osalHandler->TaskSleepMs(1000);
-//             }
-//         }
-//     } else {
-//         while (DjiTest_FlightControlGetValueOfFlightStatus() == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
-//                DjiTest_FlightControlGetValueOfDisplayMode() ==
-//                DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING) {
-//             s_osalHandler->TaskSleepMs(1000);
-//         }
-//     }
-//     /*! Step 5: Landing finished check*/
-//     if (DjiTest_FlightControlGetValueOfDisplayMode() != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS ||
-//         DjiTest_FlightControlGetValueOfDisplayMode() != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE) {
-//         USER_LOG_INFO("Successful landing");
-//     } else {
-//         USER_LOG_ERROR("Landing finished, but the aircraft is in an unexpected mode. "
-//                        "Please connect DJI Assistant.");
-//         return false;
-//     }
-//     return true;
-// }
 
 void connlost(void *context, char *cause)
 {
@@ -178,13 +93,23 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 				goto out;
 			}
 			cJSON *data = cJSON_GetObjectItem(root, "data");
-			cJSON *data_copy;
+			// cJSON *data_copy;
 			if (data != NULL && cJSON_IsObject(data)) { // 检查是否为Object类型
 				printf("Parsed value for 'data': %s\n", data->string);
-				data_copy = cJSON_Duplicate(data, true);
-				if (data_copy == NULL) {
-					goto out;
+				cJSON *latitude_json = cJSON_GetObjectItemCaseSensitive(data, "latitude");
+				if (latitude_json && cJSON_IsNumber(latitude_json)) {
+					targetLat = latitude_json->valuedouble;
+					printf("Latitude: %f\n", latitude_json->valuedouble);
 				}
+				cJSON *longitude_json = cJSON_GetObjectItemCaseSensitive(data, "longitude");
+				if (longitude_json && cJSON_IsNumber(longitude_json)) {
+					targetLon = longitude_json->valuedouble;
+					printf("Longitude: %f\n", longitude_json->valuedouble);
+				}
+				// data_copy = cJSON_Duplicate(data, true);
+				// if (data_copy == NULL) {
+				// 	goto out;
+				// }
 			} else {
 				goto out;
 			}
@@ -258,12 +183,12 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 			dji_f64_t currentLon = droneStatus.rtkLongitude;
 			dji_f64_t currentLat = droneStatus.rtkLatitude;
 			pthread_mutex_unlock(&statusMutex); // 解锁
-			float disBposTstation = calculateGreatCircleDistance(currentLat, currentLon, stationPos.latitude, stationPos.longitude);
-			// if(remainingBattery < 30 || disBposTstation > 2 || is_RTK_ready!=50 || !stationary)
-			if(remainingBattery < 10 || disBposTstation > 3.4028235E38f || is_RTK_ready==50 || !stationary)
+			float disBposTstation = calculateGreatCircleDistance(currentLat, currentLon, stationPos.latitude, stationPos.longitude); //后续要改station的坐标，可以开机从数据库读取
+			float disTarposTstation = calculateGreatCircleDistance(currentLat, currentLon, targetLat, targetLon); //地面站处理当收到目标点时计算目标点距离无人机当前位置的距离，如果过远则拒绝执行任务（防止接收到的目标点有问题）
+			if(disTarposTstation > 3.4028235E38f || remainingBattery < 10 || disBposTstation > 3.4028235E38f || is_RTK_ready==50 || stationary!=0)
 			{
-				printf("----remainingBattery--%d----disBposTstation--%f----is_RTK_ready--%d\n", remainingBattery, disBposTstation, is_RTK_ready);
-				cJSON_AddNumberToObject(reply, "result", 3); // 3 表示任务不开始执行（无人机自身原因）
+				USER_LOG_INFO("----disTarposTstation--%f----remainingBattery--%d----disBposTstation--%f----is_RTK_ready--%d\n", disTarposTstation, remainingBattery, disBposTstation, is_RTK_ready);
+				cJSON_AddNumberToObject(reply, "result", 3); // 3 表示任务不开始执行（无人机自身原因或者目标航点太远）
 				// cJSON_AddBoolToObject(reply, "isin_mission", false);
 				cJSON_AddNumberToObject(reply, "progress", 0);
 				// 将JSON对象转换为字符串以便打印或保存
@@ -302,20 +227,21 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 
 			printf("Ready to execute_mission!\n");
 			userID = useritem->valueint;
-			ThreadParams *params = malloc(sizeof(ThreadParams));  // 分配内存用于存储参数
-			params->client = client;
-			params->data = data_copy;  // cJSON *data = cJSON_GetObjectItem(root, "data");params->data = data;如果cJSON_Delete(root);，会影响DjiTest_WaypointV2RunSample线程的正常执行。
+			// ThreadParams *params = malloc(sizeof(ThreadParams));  // 分配内存用于存储参数
+			// params->client = client;
+			// params->data = data_copy;  // cJSON *data = cJSON_GetObjectItem(root, "data");params->data = data;如果cJSON_Delete(root);，会影响DjiTest_WaypointV2RunSample线程的正常执行。
 			// 在 DjiTest_WaypointV2RunSample 线程中，params->data 是指向 root 子对象的指针。
 			// 如果在主线程中调用了 cJSON_Delete(root);，则 params->data 指向的内存将被释放，导致线程中的 params->data 成为悬空指针。
 			// 解决办法：复制数据。你可以将 data 的内容复制到一个新的 cJSON 对象中，并将其传递给线程
 			// GPT
 			pthread_t thread_id;
 			// 创建线程，传递给threadFunction作为线程执行的函数
-			if (pthread_create(&thread_id, NULL, DjiTest_WaypointV2RunSample, (void*)params) != 0) {
+			// if (pthread_create(&thread_id, NULL, DjiTest_WaypointV2RunSample, (void*)params) != 0) {
+			if (pthread_create(&thread_id, NULL, DjiTest_WaypointV2RunSample, (void*)client) != 0) {
 				printf("线程创建失败\n");
 				cJSON_Delete(reply);
-				cJSON_Delete(data_copy); // 清理复制的对象
-				free(params);
+				// cJSON_Delete(data_copy); // 清理复制的对象
+				// free(params);
 				// cJSON_Delete(root);
 				// return 1;
 				goto out;
@@ -328,53 +254,24 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 
 			cJSON_Delete(reply);
 
-			T_DjiReturnCode returnCode = DjiTest_LiveviewRunSample();
+			T_DjiReturnCode returnCode = DjiTest_LiveviewRunSample(DJI_MOUNT_POSITION_UNKNOWN);
 			if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
 				USER_LOG_ERROR("live view sample init error\n");
 			}
 			// free(params);  // 不能在这里释放内存，否则线程执行有问题，需要在线程中释放内存
 			// cJSON_Delete(root); // 解析完成后记得释放内存
 		} 
-		// else if(topicName==TOPIC_CANCEL)
-		// {
-		// 	T_DjiReturnCode returnCode;
-		// 	// // RC must be in p-mode.
-		// 	// USER_LOG_INFO("--> Step 1: Obtain joystick control authority");
-		// 	// returnCode = DjiFlightController_ObtainJoystickCtrlAuthority();
-		// 	// if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-		// 	// 	USER_LOG_ERROR("Obtain joystick authority failed, error code: 0x%08X", returnCode);
-		// 	// 	goto out;
-		// 	// }
-		// 	// s_osalHandler->TaskSleepMs(1000);
-		// 	USER_LOG_INFO("--> Step 6: Set go home altitude to 50(m)\r\n");
-		// 	returnCode = DjiFlightController_SetGoHomeAltitude(50);
-		// 	if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-		// 		USER_LOG_ERROR("Set go home altitude to 50(m) failed, error code: 0x%08X", returnCode);
-		// 		goto out;
-		// 	}
-		// 	/*! get go home altitude */
-		// 	E_DjiFlightControllerGoHomeAltitude goHomeAltitude;
-		// 	returnCode = DjiFlightController_GetGoHomeAltitude(&goHomeAltitude);
-		// 	if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-		// 		USER_LOG_ERROR("Get go home altitude failed, error code: 0x%08X", returnCode);
-		// 		goto out;
-		// 	}
-		// 	USER_LOG_INFO("Current go home altitude is %d m\r\n", goHomeAltitude);
-		// 	USER_LOG_INFO("--> Step 8: Go home and confirm force landing\r\n");
-		// 	if (!DjiTest_FlightControlGoHomeAndConfirmLanding()) {
-		// 		USER_LOG_ERROR("Go home and confirm force landing failed");
-		// 		goto out;
-		// 	}
-		// 	USER_LOG_INFO("Successful go home and confirm force landing\r\n");
-
-		// 	// USER_LOG_INFO("-> Step 9: Release joystick authority");
-		// 	// returnCode = DjiFlightController_ReleaseJoystickCtrlAuthority();
-		// 	// if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-		// 	// 	USER_LOG_ERROR("Release joystick authority failed, error code: 0x%08X", returnCode);
-		// 	// 	goto out;
-		// 	// }
-		// 	replyProgress(client, false, false, schedule, 1);
-		// }
+		else if(strcmp(topicName, TOPIC_CANCEL) == 0)
+		{
+			T_DjiOsalHandler *osalHandler = NULL;
+			osalHandler = DjiPlatform_GetOsalHandler();
+			if (osalHandler->TaskCreate("gohome_forceland_task", DjiTest_FlightControlGoHomeForceLandingTask,
+                                DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_gohomeForcelandThread) !=
+				DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+				USER_LOG_ERROR("user gohome forceland task create error.");
+				goto out;
+			}
+		}
 	} else {
 		// 如果解析失败，可能不是有效的 JSON 或者有其他问题
 		printf("Failed to parse JSON message.\n");
@@ -449,3 +346,4 @@ void onConnect(void* context, MQTTAsync_successData* response)
 		finished = 1;
 	}
 }
+

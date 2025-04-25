@@ -6,10 +6,6 @@
 
 #IncludeRegexTransform: 
 
-../psdk_lib/include/dji_aircraft_info.h
-dji_typedef.h
-../psdk_lib/include/dji_typedef.h
-
 ../psdk_lib/include/dji_error.h
 stdint.h
 -
@@ -48,6 +44,14 @@ string.h
 dji_error.h
 ../psdk_lib/include/dji_error.h
 
+../psdk_lib/include/dji_waypoint_v2.h
+dji_typedef.h
+../psdk_lib/include/dji_typedef.h
+dji_waypoint_v2_type.h
+../psdk_lib/include/dji_waypoint_v2_type.h
+
+../psdk_lib/include/dji_waypoint_v2_type.h
+
 ../samples/sample_c/module_sample/fc_subscription/test_fc_subscription.h
 dji_typedef.h
 ../samples/sample_c/module_sample/fc_subscription/dji_typedef.h
@@ -60,35 +64,27 @@ cjson/cJSON.h
 MQTTAsync.h
 -
 
-../samples/sample_c/module_sample/waypoint_v2/test_waypoint_v2.h
-dji_typedef.h
-../samples/sample_c/module_sample/waypoint_v2/dji_typedef.h
-
-/home/nvidia/project/Payload-SDK/samples/sample_c/platform/linux/nvidia_jetson/Mine/mqtt_function.c
-MQTTAsync.h
-/home/nvidia/project/Payload-SDK/samples/sample_c/platform/linux/nvidia_jetson/Mine/MQTTAsync.h
-mqtt_function.h
-/home/nvidia/project/Payload-SDK/samples/sample_c/platform/linux/nvidia_jetson/Mine/mqtt_function.h
-cjson/cJSON.h
-/home/nvidia/project/Payload-SDK/samples/sample_c/platform/linux/nvidia_jetson/Mine/cjson/cJSON.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/test_waypoint_v2.c
+test_waypoint_v2.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/test_waypoint_v2.h
+dji_waypoint_v2.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/dji_waypoint_v2.h
+dji_fc_subscription.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/dji_fc_subscription.h
+dji_logger.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/dji_logger.h
+dji_platform.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/dji_platform.h
+math.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/math.h
 sys/time.h
 -
 fc_subscription/test_fc_subscription.h
 -
-waypoint_v2/test_waypoint_v2.h
--
-math.h
--
-dji_logger.h
-/home/nvidia/project/Payload-SDK/samples/sample_c/platform/linux/nvidia_jetson/Mine/dji_logger.h
 dji_flight_controller.h
 -
-dji_aircraft_info.h
--
 
-/home/nvidia/project/Payload-SDK/samples/sample_c/platform/linux/nvidia_jetson/Mine/mqtt_function.h
-MQTTAsync.h
-/home/nvidia/project/Payload-SDK/samples/sample_c/platform/linux/nvidia_jetson/Mine/MQTTAsync.h
-stdbool.h
--
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/test_waypoint_v2.h
+dji_typedef.h
+/home/nvidia/project/Payload-SDK/samples/sample_c/module_sample/waypoint_v2/dji_typedef.h
 

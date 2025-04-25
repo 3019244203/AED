@@ -8,7 +8,7 @@
 #define CLIENTID    "ExampleClientSub"
 #define USERNAME    "AEDMatrice350"
 #define PASSWORD    "AEDMatrice350tjyx"
-#define TOPIC       "gcs_receive/1/target_pos"
+#define TOPIC       "dispatch/topic"
 #define TOPIC_CANCEL       "gcs_receive/1/aid_cancel"
 // #define TOPIC_REPLY       "gcs_reply/1/process"
 #define PAYLOAD     "Hello World!"

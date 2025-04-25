@@ -281,7 +281,7 @@ int main(int argc, char **argv)
 #endif
 
 // #ifdef CONFIG_MODULE_SAMPLE_LIVEVIEW_ON
-//         returnCode = DjiTest_LiveviewRunSample();
+//         returnCode = DjiTest_LiveviewRunSample(DJI_MOUNT_POSITION_UNKNOWN);
 //         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
 //             USER_LOG_ERROR("live view sample init error\n");
 //         }

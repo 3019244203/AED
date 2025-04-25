@@ -45,15 +45,20 @@ typedef struct {
     float process;
 } DroneStatus;
 
+typedef struct {
+    E_DjiFcSubscriptionDisplayMode displayMode;
+    char *displayModeStr;
+} T_DjiTestFlightControlDisplayModeStr;
+
 // typedef struct {
 //     dji_f64_t homeLongitude;
 //     dji_f64_t homeLatitude;
 // } HomePoint;
 
-typedef struct {
-    cJSON *data;
-    MQTTAsync client;
-} ThreadParams;
+// typedef struct {
+//     cJSON *data;
+//     MQTTAsync client;
+// } ThreadParams;
 
 
 #ifdef __cplusplus
@@ -75,9 +80,12 @@ extern bool isin_mission;
 extern dji_f64_t schedule;
 extern dji_f64_t targetLat, targetLon;
 extern uint8_t userID;
-extern bool stationary;
+extern uint8_t stationary;
+extern uint8_t dMode;
 extern bool stopview;
 extern dji_f64_t distance_safe;
+extern dji_f32_t relHeight;
+extern const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[];
 
 /* Exported functions --------------------------------------------------------*/
 T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg);
@@ -85,6 +93,8 @@ T_DjiReturnCode DjiTest_FcSubscriptionRunSample(void);
 T_DjiReturnCode DjiTest_FcSubscriptionDataShowTrigger(void);
 T_DjiReturnCode DjiTest_FcSubscriptionGetTotalSatelliteNumber(uint8_t *number);
 void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, int gateway);
+extern void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg);
+extern uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode displayMode);
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,8 @@
+[32m[0.003][core]-[Info]-[DjiCore_Init:106) Payload SDK Version : V3.9.2-beta.0-build.2125 [0m
+[37m[0.004][utils]-[Debug]-[DjiCore_RootTask:131) work execution time: [0m
+[37m[0.004][utils]-[Debug]-[DjiCore_RootTask:132) name	                execution time (ms)	  max execution time (ms) [0m
+[37m[0.004][utils]-[Debug]-[DjiCore_RootTask:134) recorderWork                    	0       	0        [0m
+[37m[0.004][utils]-[Debug]-[DjiCore_RootTask:134) flowControllerTask              	0       	0        [0m
+[31m[0.005][adapter]-[Error]-[DjiAccessAdapter_Init:197) DjiAccessAdapter_IsUartConnect, returnCode = 236 [0m
+[31m[0.005][adapter]-[Error]-[DjiAccessAdapter_Init:197) DjiAccessAdapter_IsUartConnect, returnCode = 236 [0m
+[31m[0.005][core]-[Error]-[DjiCore_Init:126) Access adapter init error, stat:236 [0m

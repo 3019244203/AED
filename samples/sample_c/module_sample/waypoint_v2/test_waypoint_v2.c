@@ -33,8 +33,10 @@
 #include <sys/time.h>
 // #include "../../platform/linux/nvidia_jetson/Mine/mqtt_function.h" // mqtt publish的锁  isin_mission
 #include <fc_subscription/test_fc_subscription.h>
+#include <dji_flight_controller.h>
 
-#define MAX_DEVIATION 0.01 // 允许的最大偏离距离，单位为公里
+#define MAX_DEVIATION 0.02 // 允许的最大偏离距离，单位为公里
+#define DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE   (1024)
 
 // MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
 // MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
@@ -51,7 +53,13 @@ typedef struct {
     char *stateStr;
 } T_DjiTestWaypointV2StateStr;
 
+// typedef struct {
+//     E_DjiFcSubscriptionDisplayMode displayMode;
+//     char *displayModeStr;
+// } T_DjiTestFlightControlDisplayModeStr;
+
 /* Private values -------------------------------------------------------------*/
+static T_DjiTaskHandle s_gohomeForcelandThread;
 static T_DjiOsalHandler *osalHandler = NULL;
 static const dji_f32_t TEST_EARTH_RADIUS = 6378137.0;
 static uint32_t s_missionID = 12345;
@@ -78,6 +86,19 @@ static const T_DjiTestWaypointV2StateStr s_waypointV2StateStr[] = {
     {.missionState = 0x06, .stateStr = "Exit mission"},
     {.missionState = 0xFF, .stateStr = "Unknown"}
 };
+
+// static const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[] = {
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE, .displayModeStr = "attitude mode"},
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS, .displayModeStr = "p_gps mode"},
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ASSISTED_TAKEOFF, .displayModeStr = "assisted takeoff mode"},
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_TAKEOFF, .displayModeStr = "auto takeoff mode"},
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING, .displayModeStr = "auto landing mode"},
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME, .displayModeStr = "go home mode"},
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING, .displayModeStr = "force landing mode"},
+//     {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ENGINE_START, .displayModeStr = "engine start mode"},
+//     {.displayMode = 0xFF, .displayModeStr = "unknown mode"}
+// };
+
 static MQTTAsync client;
 
 /* Private functions declaration ---------------------------------------------*/
@@ -98,31 +119,32 @@ static dji_f64_t computeProgress(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2,
 /* Exported functions definition ---------------------------------------------*/
 void *DjiTest_WaypointV2RunSample(void* arg)
 {
-    ThreadParams *params = (ThreadParams*)arg;  // 将传入的void*转换为ThreadParams*
-    cJSON *data = params->data;  // 释放 params 结构体并不会直接影响到 data 指针本身，因为 data 是一个指向 cJSON 对象的指针，它的值是从 params->data 复制过来的。
-    // 然而，如果 params 是你唯一持有 data 指针的地方，并且你在释放 params 之后没有其他地方保存这个 data 指针，那么你将失去对 data 的引用，这会导致无法正确管理 data 的生命周期，最终可能导致内存泄漏或访问无效内存。
-    client = params->client;
+    client = (MQTTAsync)arg;
+    // ThreadParams *params = (ThreadParams*)arg;  // 将传入的void*转换为ThreadParams*
+    // cJSON *data = params->data;  // 释放 params 结构体并不会直接影响到 data 指针本身，因为 data 是一个指向 cJSON 对象的指针，它的值是从 params->data 复制过来的。
+    // // 然而，如果 params 是你唯一持有 data 指针的地方，并且你在释放 params 之后没有其他地方保存这个 data 指针，那么你将失去对 data 的引用，这会导致无法正确管理 data 的生命周期，最终可能导致内存泄漏或访问无效内存。
+    // client = params->client;
     isin_mission = true;
     finishedMission = false;
     // 改变最大速度
     // 清除之前的mission
 
-    cJSON *latitude_json = cJSON_GetObjectItemCaseSensitive(data, "latitude");
-    if (latitude_json && cJSON_IsNumber(latitude_json)) {
-        targetLat = latitude_json->valuedouble;
-        printf("Latitude: %f\n", latitude_json->valuedouble);
-    }
-    cJSON *longitude_json = cJSON_GetObjectItemCaseSensitive(data, "longitude");
-    if (longitude_json && cJSON_IsNumber(longitude_json)) {
-        targetLon = longitude_json->valuedouble;
-        printf("Longitude: %f\n", longitude_json->valuedouble);
-    }
+    // cJSON *latitude_json = cJSON_GetObjectItemCaseSensitive(data, "latitude");
+    // if (latitude_json && cJSON_IsNumber(latitude_json)) {
+    //     targetLat = latitude_json->valuedouble;
+    //     printf("Latitude: %f\n", latitude_json->valuedouble);
+    // }
+    // cJSON *longitude_json = cJSON_GetObjectItemCaseSensitive(data, "longitude");
+    // if (longitude_json && cJSON_IsNumber(longitude_json)) {
+    //     targetLon = longitude_json->valuedouble;
+    //     printf("Longitude: %f\n", longitude_json->valuedouble);
+    // }
 
-    /***可以释放data了*/
-    // 确保在不需要 data_copy 后释放它
-    cJSON_Delete(data);
-    // 释放 params 结构体
-    free(params);
+    // /***可以释放data了*/
+    // // 确保在不需要 data_copy 后释放它
+    // cJSON_Delete(data);
+    // // 释放 params 结构体
+    // free(params);
 
     // dji_f64_t distanceTotal = computeProgress(homeLat, homeLon, targetLat, targetLon);
     // // 任务航点
@@ -219,16 +241,38 @@ void *DjiTest_WaypointV2RunSample(void* arg)
             USER_LOG_ERROR("无人机偏离航线过远。");
             // 停止任务并返航
             returnCode = DjiWaypointV2_Stop();
+            // replyProgress(client, false, false, 0, 1); // 任务中断(由于无人机偏离航线太远)   可以注释掉，因为事件回调函数会判断任务中断并replyProgress
             if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
                 USER_LOG_ERROR("Stop waypoint V2 mission failed, error code: 0x%08X", returnCode);
                 goto out;
-            } else {
-                replyProgress(client, false, false, 0, 1); // 任务启动失败(由于无人机偏离航线太远)
             }
-        } else {
-            printf("无人机在正常范围内。\n");
-            USER_LOG_INFO("无人机在正常范围内。");
-        }
+
+            // T_DjiOsalHandler *osalHandler = NULL;
+			osalHandler = DjiPlatform_GetOsalHandler();
+			if (osalHandler->TaskCreate("gohome_forceland_task", DjiTest_FlightControlGoHomeForceLandingTask,
+                                DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_gohomeForcelandThread) !=
+				DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+				USER_LOG_ERROR("user gohome forceland task create error.");
+				goto out;
+			}
+
+            // T_DjiFlightControllerRidInfo ridInfo = {0};
+            // ridInfo.latitude = 22.542812;
+            // ridInfo.longitude = 113.958902;
+            // ridInfo.altitude = 10;
+            // returnCode = DjiFlightController_Init(ridInfo);
+            // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //     USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX", returnCode);
+            //     goto out;
+            // }
+            // // Start go home
+            // USER_LOG_INFO("Start go home action for that the drone deviates too far from the flight path.");
+            // returnCode = DjiFlightController_StartGoHome();
+            // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //     USER_LOG_ERROR("Start to go home failed, error code: 0x%08X", returnCode);
+            //     goto out;
+            // }
+        } 
     }
 
     // USER_LOG_INFO("--> Step 8: Pause waypoint V2 for 5 s\r\n");
@@ -459,6 +503,117 @@ static T_DjiReturnCode DjiTest_WaypointV2EventCallback(T_DjiWaypointV2MissionEve
             // 此时任务完成但还没降落
             // isin_mission = false;
             finishedMission = true;
+            //--------------------------------降落&确定降落---------------
+            if (osalHandler->TaskCreate("gohome_forceland_task", DjiTest_FlightControlGoHomeForceLandingTask,
+                                DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_gohomeForcelandThread) !=
+				DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+				USER_LOG_ERROR("user gohome forceland task create error.");
+				return false;
+			}
+            // USER_LOG_DEBUG("Init flight Control Sample");
+            // T_DjiReturnCode returnCode;
+            // T_DjiFlightControllerRidInfo ridInfo = {0};
+
+            // T_DjiOsalHandler *s_osalHandler  = DjiPlatform_GetOsalHandler();
+            // if (!s_osalHandler) return false;
+            
+            // ridInfo.latitude = 22.542812;
+            // ridInfo.longitude = 113.958902;
+            // ridInfo.altitude = 10;
+            // returnCode = DjiFlightController_Init(ridInfo);
+            // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //     USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX", returnCode);
+            //     return false;
+            // }
+            // E_DjiFlightControllerObstacleAvoidanceEnableStatus enableStatus;
+            // returnCode = DjiFlightController_GetDownwardsVisualObstacleAvoidanceEnableStatus(&enableStatus);
+            // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //     USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error");
+            // }
+
+            // /*Start landing */
+            // USER_LOG_INFO("Start landing action");
+            // returnCode = DjiFlightController_StartLanding();
+            // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //     USER_LOG_ERROR("Fail to execute auto landing action, error code: 0x%08X", returnCode);
+            //     return false;
+            // }
+
+            // int actionNotStarted = 0;
+            // int timeoutCycles = 20;
+            // while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
+            //     actionNotStarted++;
+            //     s_osalHandler->TaskSleepMs(100);
+            // }
+            // if (actionNotStarted == timeoutCycles) {
+            //     USER_LOG_ERROR("%s start failed, now flight is in %s.",
+            //                     s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)].displayModeStr,
+            //                     s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+            //                         dMode)].displayModeStr);
+            //     return false;
+            // } else {
+            //     USER_LOG_INFO("Now flight is in %s.",
+            //                     s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+            //     while (stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
+            //         dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING) {
+            //         s_osalHandler->TaskSleepMs(1000);// waiting for this action finished
+            //     }
+            // }
+
+            // /*Confirm Landing */
+            // USER_LOG_INFO("Start confirm Landing and avoid ground action");
+            // returnCode = DjiFlightController_StartConfirmLanding();
+            // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //     USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
+            //     return false;
+            // }
+            // if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
+            //     actionNotStarted = 0;
+            //     timeoutCycles = 20;
+            //     while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
+            //         actionNotStarted++;
+            //         s_osalHandler->TaskSleepMs(100);
+            //     }
+        
+            //     if (actionNotStarted == timeoutCycles) {
+            //         USER_LOG_ERROR("%s start failed, now flight is in %s.",
+            //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
+            //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+            //                             dMode)].displayModeStr);
+            //         return false;
+            //     } else {
+            //         USER_LOG_INFO("Now flight is in %s.",
+            //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+            //         while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+            //             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+            //             s_osalHandler->TaskSleepMs(1000);
+            //         }
+            //     }
+            // } else {
+            //     while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+            //         stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+            //         s_osalHandler->TaskSleepMs(1000);
+            //     }
+            // }
+
+            // /*Landing finished check*/
+            // if (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS ||
+            //     dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE) {
+            //     USER_LOG_INFO("Successful landing");
+            // } else {
+            //     USER_LOG_ERROR("Landing finished, but the aircraft is in an unexpected mode. "
+            //                 "Please connect DJI Assistant.");
+            //     return false;
+            // }
+
+            // USER_LOG_DEBUG("Deinit Flight Control Sample");
+            // returnCode = DjiFlightController_DeInit();
+            // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //     USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX",
+            //                 returnCode);
+            //     return false;
+            // }
+
         }
     } else if (eventData.event == 0x12) {
         USER_LOG_INFO("[%s]: avoid obstacle state:%d",
@@ -553,10 +708,10 @@ static T_DjiReturnCode DjiTest_WaypointV2UploadMission(dji_f64_t waypointLat, dj
     missionInitSettings.missionID = s_missionID + 10;
     USER_LOG_DEBUG("Generate mission id:%d", missionInitSettings.missionID);
     missionInitSettings.repeatTimes = 0;
-    missionInitSettings.finishedAction = DJI_WAYPOINT_V2_FINISHED_AUTO_LANDING;
+    missionInitSettings.finishedAction = DJI_WAYPOINT_V2_FINISHED_CONTINUE_UNTIL_STOP;
     missionInitSettings.maxFlightSpeed = 10;
     missionInitSettings.autoFlightSpeed = 2;
-    missionInitSettings.actionWhenRcLost = DJI_WAYPOINT_V2_MISSION_KEEP_EXECUTE_WAYPOINT_V2; // 遥控信号丢失时继续执行航点任务
+    missionInitSettings.actionWhenRcLost = DJI_WAYPOINT_V2_MISSION_STOP_WAYPOINT_V2_AND_EXECUTE_RC_LOST_ACTION; // 遥控信号丢失时返航
     missionInitSettings.gotoFirstWaypointMode = DJI_WAYPOINT_V2_MISSION_GO_TO_FIRST_WAYPOINT_MODE_SAFELY; // 安全前往航路点。如果当前高度低于航路点高度，飞机将上升到航路点的相同高度。然后，它从当前高度转到航路点坐标，并继续到航路点的高度。
     printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++test_waypoint_v2.c\n");
     missionInitSettings.mission = DjiTest_WaypointV2GeneratePolygonWaypointV2(waypointLat, waypointLon);

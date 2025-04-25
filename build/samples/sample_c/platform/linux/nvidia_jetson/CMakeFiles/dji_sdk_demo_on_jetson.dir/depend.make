@@ -4,17 +4,18 @@
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../psdk_lib/include/dji_aircraft_info.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../psdk_lib/include/dji_error.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../psdk_lib/include/dji_fc_subscription.h
-samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../psdk_lib/include/dji_flight_controller.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../psdk_lib/include/dji_logger.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../psdk_lib/include/dji_platform.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../psdk_lib/include/dji_typedef.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../samples/sample_c/module_sample/fc_subscription/test_fc_subscription.h
+samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../samples/sample_c/module_sample/liveview/test_liveview.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../samples/sample_c/module_sample/waypoint_v2/test_waypoint_v2.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../samples/sample_c/platform/linux/nvidia_jetson/Mine/mqtt_function.c
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/Mine/mqtt_function.c.o: ../samples/sample_c/platform/linux/nvidia_jetson/Mine/mqtt_function.h
 
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/fc_subscription/test_fc_subscription.c.o: ../psdk_lib/include/dji_error.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/fc_subscription/test_fc_subscription.c.o: ../psdk_lib/include/dji_fc_subscription.h
+samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/fc_subscription/test_fc_subscription.c.o: ../psdk_lib/include/dji_flight_controller.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/fc_subscription/test_fc_subscription.c.o: ../psdk_lib/include/dji_logger.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/fc_subscription/test_fc_subscription.c.o: ../psdk_lib/include/dji_platform.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/fc_subscription/test_fc_subscription.c.o: ../psdk_lib/include/dji_typedef.h
@@ -140,6 +141,7 @@ samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.
 
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/waypoint_v2/test_waypoint_v2.c.o: ../psdk_lib/include/dji_error.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/waypoint_v2/test_waypoint_v2.c.o: ../psdk_lib/include/dji_fc_subscription.h
+samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/waypoint_v2/test_waypoint_v2.c.o: ../psdk_lib/include/dji_flight_controller.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/waypoint_v2/test_waypoint_v2.c.o: ../psdk_lib/include/dji_logger.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/waypoint_v2/test_waypoint_v2.c.o: ../psdk_lib/include/dji_platform.h
 samples/sample_c/platform/linux/nvidia_jetson/CMakeFiles/dji_sdk_demo_on_jetson.dir/__/__/__/module_sample/waypoint_v2/test_waypoint_v2.c.o: ../psdk_lib/include/dji_typedef.h

@@ -30,17 +30,23 @@
 #include "dji_platform.h"
 // #include "widget_interaction_test/test_widget_interaction.h"
 #include <sys/time.h>
+#include <dji_flight_controller.h>
 
 /* Private constants ---------------------------------------------------------*/
 #define FC_SUBSCRIPTION_TASK_FREQ         (1)
 #define FC_SUBSCRIPTION_TASK_STACK_SIZE   (1024)
 #define RADIUS 6371 // 地球平均半径，单位为公里
+// #define GoHomeAti 50 // 返航高度
 
 // #define TOPIC_REPLY       "gcs_reply/1/process"
 // #define QOS         2
 // #define M_PI		3.14159265358979323846
 // #define RADIUS_EARTH 6371000 // 地球半径，单位：米
 /* Private types -------------------------------------------------------------*/
+// typedef struct {
+//     E_DjiFcSubscriptionDisplayMode displayMode;
+//     char *displayModeStr;
+// } T_DjiTestFlightControlDisplayModeStr;
 
 /* Private functions declaration ---------------------------------------------*/
 static void *UserFcSubscription_Task(void *arg);
@@ -50,6 +56,7 @@ static dji_f64_t computeProgress(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2,
 static dji_f64_t deg2rad(dji_f64_t deg);
 static dji_f64_t haversine(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2);
 static dji_f64_t point_to_segment_distance(dji_f64_t latA, dji_f64_t lonA, dji_f64_t latB, dji_f64_t lonB, dji_f64_t latP, dji_f64_t lonP);
+// static uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode displayMode);
 
 /* Private variables ---------------------------------------------------------*/
 static T_DjiTaskHandle s_userFcSubscriptionThread;
@@ -62,6 +69,19 @@ static MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 static dji_f64_t distanceTotal = 0;
 static MQTTAsync client;
 // static bool in_air = false;
+// static const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[] = {
+const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[] = {
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE, .displayModeStr = "attitude mode"},
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS, .displayModeStr = "p_gps mode"},
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ASSISTED_TAKEOFF, .displayModeStr = "assisted takeoff mode"},
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_TAKEOFF, .displayModeStr = "auto takeoff mode"},
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING, .displayModeStr = "auto landing mode"},
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME, .displayModeStr = "go home mode"},
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING, .displayModeStr = "force landing mode"},
+    {.displayMode = DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ENGINE_START, .displayModeStr = "engine start mode"},
+    {.displayMode = 0xFF, .displayModeStr = "unknown mode"}
+};
+
 
 bool finishedMission = false;
 pthread_mutex_t mqtt_publish_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -74,9 +94,11 @@ DroneStatus droneStatus =  {0};
 pthread_mutex_t statusMutex = PTHREAD_MUTEX_INITIALIZER;
 dji_f64_t targetLat=0, targetLon=0;
 uint8_t userID=0;
-bool stationary=true;
+uint8_t stationary=0;
+uint8_t dMode=0;
 bool stopview=false;
 dji_f64_t distance_safe=0;
+dji_f32_t relHeight=0;
 
 /* Exported functions definition ---------------------------------------------*/
 T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg)
@@ -197,6 +219,22 @@ T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg)
         return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
     } else {
         USER_LOG_DEBUG("Subscribe topic status flight success.");
+    }
+
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_STATUS_DISPLAYMODE, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic status displaymode error.");
+        return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
+    } else {
+        USER_LOG_DEBUG("Subscribe topic status displaymode success.");
+    }
+
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_HEIGHT_FUSION, DJI_DATA_SUBSCRIPTION_TOPIC_10_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic avoid data failed,error code:0x%08llX", djiStat);
+        return djiStat;
     }
 
     printf("test_fc_subscription.c");
@@ -376,6 +414,8 @@ static void *UserFcSubscription_Task(void *arg)
     T_DjiFcSubscriptionWholeBatteryInfo batteryInfo = {0};
     T_DjiFcSubscriptionHomePointInfo homepointInfo = {0};
     T_DjiFcSubscriptionFlightStatus flightStatus = {0};
+    T_DjiFcSubscriptionDisplaymode displayMode = {0};
+    T_DjiFcSubscriptionHeightFusion heightFusion = {0};
     T_DjiOsalHandler *osalHandler = NULL;
 
     // uint8_t is_RTK_ready = 0;
@@ -491,20 +531,32 @@ static void *UserFcSubscription_Task(void *arg)
                           rtkPosition.hfsl);
         }
         pthread_mutex_lock(&statusMutex); // 加锁以保护对共享资源的访问
-        droneStatus.rtkLongitude = rtkPosition.longitude;
-        droneStatus.rtkLatitude = rtkPosition.latitude;
-        droneStatus.relativeHeight = rtkPosition.hfsl - altitudeOfHomepoint;
+        // droneStatus.rtkLongitude = rtkPosition.longitude;
+        // droneStatus.rtkLatitude = rtkPosition.latitude;
+        // droneStatus.relativeHeight = rtkPosition.hfsl - altitudeOfHomepoint;
+        // droneStatus.process = schedule;
+        // printf("test_fc_subscription.c------------droneStatus----------------------%f,  %f,  %f, %f\n", droneStatus.rtkLongitude, droneStatus.rtkLatitude, rtkPosition.hfsl, droneStatus.relativeHeight);
+        droneStatus.rtkLongitude =  gpsPosition.x*1e-7;
+        droneStatus.rtkLatitude = gpsPosition.y*1e-7;
+        droneStatus.relativeHeight = gpsPosition.z*1e-3;
         droneStatus.process = schedule;
-        printf("test_fc_subscription.c------------droneStatus----------------------%f,  %f,  %f\n", droneStatus.rtkLongitude, droneStatus.rtkLatitude, rtkPosition.hfsl);
+        printf("test_fc_subscription.c------------droneStatus----------------------%f,  %f,  %f\n", droneStatus.rtkLongitude, droneStatus.rtkLatitude, droneStatus.relativeHeight);
         pthread_mutex_unlock(&statusMutex); // 解锁
         if(isin_mission)
         {
-            dji_f64_t distanceCurrent = computeProgress(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), rtkPosition.latitude, rtkPosition.longitude);
+            // dji_f64_t distanceCurrent = computeProgress(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), rtkPosition.latitude, rtkPosition.longitude);
+            // schedule = distanceCurrent / distanceTotal;
+            // printf("test_fc_subscription.c------------isin_mission--------------replyProgress--------\n");
+            // printf("distanceCurrent： %f;  distanceTotal: %f\n", distanceCurrent, distanceTotal);
+            // replyProgress(client, true, true, schedule, 1);
+            // distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, rtkPosition.latitude, rtkPosition.longitude);
+            dji_f64_t distanceCurrent = computeProgress(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), gpsPosition.y*1e-7, gpsPosition.x*1e-7);
             schedule = distanceCurrent / distanceTotal;
             printf("test_fc_subscription.c------------isin_mission--------------replyProgress--------\n");
             printf("distanceCurrent： %f;  distanceTotal: %f\n", distanceCurrent, distanceTotal);
             replyProgress(client, true, true, schedule, 1);
-            distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, rtkPosition.latitude, rtkPosition.longitude);
+            distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
+            printf("distance_safe: %f\n", distance_safe);
         } 
         
 
@@ -547,14 +599,41 @@ static void *UserFcSubscription_Task(void *arg)
         if (s_userFcSubscriptionDataShow == true) {
             USER_LOG_INFO("Flight status: %d.", flightStatus);
         }
-        if(flightStatus==0) stationary=true;
-        else stationary=false;
+        // if(flightStatus==0) stationary=true;
+        // else stationary=false;
+        stationary=flightStatus;
         if(finishedMission && flightStatus==0) {
-            printf("test_fc_subscription.c------------finishedMission--------------replyProgress--------\n");
+            USER_LOG_INFO("test_fc_subscription.c------------finishedMission--------------replyProgress--------\n");
             replyProgress(client, true, false, 1, 1); //无人机完成任务并降落在地面且锁桨
             finishedMission = false;
             stopview = true;
         }
+
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_STATUS_DISPLAYMODE,
+                                                          (uint8_t *) &displayMode,
+                                                          sizeof(T_DjiFcSubscriptionDisplaymode),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("get value of displaymode status error.");
+        }
+        if (s_userFcSubscriptionDataShow == true) {
+            USER_LOG_INFO("Displaymode status: %d.", displayMode);
+        }
+        dMode = displayMode;
+        
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_HEIGHT_FUSION,
+                                                          (uint8_t *) &heightFusion,
+                                                          sizeof(T_DjiFcSubscriptionHeightFusion),
+                                                          &timestamp);
+
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("Get value of topic height fusion error, error code: 0x%08X", djiStat);
+        }
+        if (s_userFcSubscriptionDataShow == true) {
+            USER_LOG_DEBUG("Timestamp: millisecond %u microsecond %u.", timestamp.millisecond, timestamp.microsecond);
+            USER_LOG_DEBUG("Relative height fusion is %f m", heightFusion);
+        }
+        relHeight = heightFusion;
         
 
         // 判断GPS和RTK差别大不
@@ -611,7 +690,7 @@ void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progr
 		if (error_ptr != NULL) {
 			fprintf(stderr, "Error before: %s\n", error_ptr);
 		}
-		return 1;
+		return;
 	}
 	// 添加键值对到JSON对象
 	cJSON_AddNumberToObject(reply, "gateway", gateway);
@@ -721,5 +800,214 @@ static dji_f64_t point_to_segment_distance(dji_f64_t latA, dji_f64_t lonA, dji_f
     } else {
         return haversine(latD, lonD, latP, lonP);
     }
+}
+
+uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode displayMode)
+{
+    uint8_t i;
+
+    for (i = 0; i < sizeof(s_flightControlDisplayModeStr) / sizeof(T_DjiTestFlightControlDisplayModeStr); i++) {
+        if (s_flightControlDisplayModeStr[i].displayMode == displayMode) {
+            return i;
+        }
+    }
+
+    return i;
+}
+
+void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
+{
+    USER_LOG_DEBUG("Init flight Control Sample");
+    T_DjiReturnCode returnCode;
+    T_DjiFlightControllerRidInfo ridInfo = {0};
+
+    T_DjiOsalHandler *s_osalHandler  = DjiPlatform_GetOsalHandler();
+    if (!s_osalHandler) goto out;
+    
+    ridInfo.latitude = 22.542812;
+    ridInfo.longitude = 113.958902;
+    ridInfo.altitude = 10;
+    
+    returnCode = DjiFlightController_Init(ridInfo);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX", returnCode);
+        goto out;
+    }
+    // returnCode = DjiFlightController_RegJoystickCtrlAuthorityEventCallback(
+    //     DjiTest_FlightControlJoystickCtrlAuthSwitchEventCallback);
+    // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS && returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_NONSUPPORT) {
+    //     USER_LOG_ERROR("Register joystick control authority event callback failed,error code:0x%08llX", returnCode);
+    //     return returnCode;
+    // }
+
+    USER_LOG_INFO("Flight control go-home-force-landing sample start");
+    // // RC must be in p-mode.
+    // USER_LOG_INFO("--> Step 1: Obtain joystick control authority");
+    // returnCode = DjiFlightController_ObtainJoystickCtrlAuthority();
+    // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    // 	USER_LOG_ERROR("Obtain joystick authority failed, error code: 0x%08X", returnCode);
+    // 	goto out;
+    // }
+    // s_osalHandler->TaskSleepMs(1000);
+    // USER_LOG_INFO("--> Set go home altitude to %d(m)\r\n", GoHomeAti);
+    // returnCode = DjiFlightController_SetGoHomeAltitude(GoHomeAti);
+    // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    //     USER_LOG_ERROR("Set go home altitude to %d(m) failed, error code: 0x%08X", GoHomeAti, returnCode);
+    //     goto out;
+    // }
+    /*! get go home altitude */
+    E_DjiFlightControllerGoHomeAltitude goHomeAltitude;
+    returnCode = DjiFlightController_GetGoHomeAltitude(&goHomeAltitude);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Get go home altitude failed, error code: 0x%08X", returnCode);
+        goto out;
+    }
+    USER_LOG_INFO("Current go home altitude is %d m\r\n", goHomeAltitude);
+
+    USER_LOG_INFO("--> Go home and confirm force landing\r\n");
+
+    E_DjiFlightControllerObstacleAvoidanceEnableStatus enableStatus;
+    returnCode = DjiFlightController_GetDownwardsVisualObstacleAvoidanceEnableStatus(&enableStatus);
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error");
+    }
+    USER_LOG_INFO("Start go home action");
+    returnCode = DjiFlightController_StartGoHome();
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Start to go home failed, error code: 0x%08X", returnCode);
+        goto out;
+    }
+    
+    int actionNotStarted = 0;
+    int timeoutCycles = 20;
+    while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME && actionNotStarted < timeoutCycles) {
+        actionNotStarted++;
+        s_osalHandler->TaskSleepMs(100);
+    }
+
+    if (actionNotStarted == timeoutCycles) {
+        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+                        s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME)].displayModeStr,
+                        s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+                            dMode)].displayModeStr);
+        goto out;
+    } else {
+        USER_LOG_INFO("Now flight is in %s.",
+                        s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+        while (stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
+            dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME) {
+            s_osalHandler->TaskSleepMs(1000);// waiting for this action finished
+        }
+    }
+    // if (!DjiTest_FlightControlCheckActionStarted(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME)) {
+    //     goto out;
+    // } else {
+    //     while (stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
+    //         dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME) {
+    //         s_osalHandler->TaskSleepMs(1000);// waiting for this action finished
+    //     }
+    // }
+    /*Start landing */
+    USER_LOG_INFO("Start landing action");
+    actionNotStarted = 0;
+    timeoutCycles = 20;
+    while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
+        actionNotStarted++;
+        s_osalHandler->TaskSleepMs(100);
+    }
+
+    if (actionNotStarted == timeoutCycles) {
+        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+                        s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)].displayModeStr,
+                        s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+                            dMode)].displayModeStr);
+        goto out;
+    } else {
+        USER_LOG_INFO("Now flight is in %s.",
+                        s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+        while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING &&
+            stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+            s_osalHandler->TaskSleepMs(1000);
+            if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
+                break;
+            }
+        }
+    }
+    // if (!DjiTest_FlightControlCheckActionStarted(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)) {
+    //     USER_LOG_ERROR("Fail to execute Landing action");
+    //     goto out;
+    // } else {
+    //     while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING &&
+    //             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+    //         s_osalHandler->TaskSleepMs(1000);
+    //         if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
+    //             break;
+    //         }
+    //     }
+    // }
+    /*Confirm Landing */
+    USER_LOG_INFO("Start confirm Landing and avoid ground action");
+    returnCode = DjiFlightController_StartConfirmLanding();
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
+        goto out;
+    }
+    if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
+        actionNotStarted = 0;
+        timeoutCycles = 20;
+        while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
+            actionNotStarted++;
+            s_osalHandler->TaskSleepMs(100);
+        }
+
+        if (actionNotStarted == timeoutCycles) {
+            USER_LOG_ERROR("%s start failed, now flight is in %s.",
+                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
+                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+                                dMode)].displayModeStr);
+            goto out;
+        } else {
+            USER_LOG_INFO("Now flight is in %s.",
+                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+            while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+                stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+                s_osalHandler->TaskSleepMs(1000);
+            }
+        }
+    } else {
+        while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+            stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+            s_osalHandler->TaskSleepMs(1000);
+        }
+    }
+    /*Landing finished check*/
+    if (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS ||
+        dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE) {
+        USER_LOG_INFO("Successful landing");
+    } else {
+        USER_LOG_ERROR("Landing finished, but the aircraft is in an unexpected mode. "
+                       "Please connect DJI Assistant.");
+        return false;
+    }
+    USER_LOG_INFO("Successful go home and confirm force landing\r\n");
+
+    // USER_LOG_INFO("-> Step 9: Release joystick authority");
+    // returnCode = DjiFlightController_ReleaseJoystickCtrlAuthority();
+    // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    // 	USER_LOG_ERROR("Release joystick authority failed, error code: 0x%08X", returnCode);
+    // 	goto out;
+    // }
+    // replyProgress(client, false, false, schedule, 1);
+
+    USER_LOG_DEBUG("Deinit Flight Control Sample");
+    returnCode = DjiFlightController_DeInit();
+    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX",
+                       returnCode);
+        goto out;
+    }
+
+out:
+    USER_LOG_INFO("Flight control go-home-force-landing sample end");
 }
 /****************** (C) COPYRIGHT DJI Innovations *****END OF FILE****/
