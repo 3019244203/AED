@@ -39,7 +39,8 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 
 /* Exported functions --------------------------------------------------------*/
-T_DjiReturnCode DjiTest_LiveviewRunSample(E_DjiMountPosition mountPosition);
+// T_DjiReturnCode DjiTest_LiveviewRunSample(E_DjiMountPosition mountPosition);
+T_DjiReturnCode DjiTest_LiveviewRunSample(uint8_t droneID);
 
 #ifdef __cplusplus
 }

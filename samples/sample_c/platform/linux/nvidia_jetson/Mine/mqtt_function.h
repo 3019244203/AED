@@ -9,7 +9,11 @@
 #define USERNAME    "AEDMatrice350"
 #define PASSWORD    "AEDMatrice350tjyx"
 #define TOPIC       "dispatch/topic"
-#define TOPIC_CANCEL       "gcs_receive/1/aid_cancel"
+#define TOPIC_CANCEL       "aid_cancel/topic"
+#define TOPIC_responseCabins       "responseDronesByAirport/topic"
+#define TOPIC_requestCabins       "requestDronesByAirport/topic"
+#define TOPIC_responsePlacementPoint       "responsePlacementPoint/topic"
+#define TOPIC_requestPlacementPoint       "requestPlacementPoint/topic"
 // #define TOPIC_REPLY       "gcs_reply/1/process"
 #define PAYLOAD     "Hello World!"
 // #define QOS         2
@@ -20,6 +24,18 @@ typedef struct {
     double latitude;  // 纬度
     double longitude; // 经度
 } Coordinate;
+
+typedef struct {
+    int index; // 对应于dronesArray中的索引
+    double distance;
+} IndexedDistance;
+
+
+typedef struct {
+    int droneId;
+    double lat;
+    double lng;
+} DroneInfo;
 
 
 extern int finished;

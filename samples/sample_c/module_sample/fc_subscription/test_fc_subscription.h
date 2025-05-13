@@ -35,14 +35,14 @@
 #include <MQTTAsync.h>
 #define RADIUS_EARTH 6371000 // 地球半径，单位：米
 #define M_PI		3.14159265358979323846
-#define TOPIC_REPLY       "gcs_reply/1/progress"
+#define TOPIC_REPLY       "response/topic"
 #define QOS         2
 
 typedef struct {
     dji_f64_t rtkLongitude;
     dji_f64_t rtkLatitude; 
     dji_f32_t relativeHeight;
-    float process;
+    // float process;
 } DroneStatus;
 
 typedef struct {
@@ -55,10 +55,11 @@ typedef struct {
 //     dji_f64_t homeLatitude;
 // } HomePoint;
 
-// typedef struct {
-//     cJSON *data;
-//     MQTTAsync client;
-// } ThreadParams;
+typedef struct {
+    MQTTAsync client;
+    uint8_t orderID;
+    uint8_t droneID;
+} ThreadParams;
 
 
 #ifdef __cplusplus
@@ -79,12 +80,20 @@ extern pthread_mutex_t mqtt_publish_mutex;
 extern bool isin_mission;
 extern dji_f64_t schedule;
 extern dji_f64_t targetLat, targetLon;
-extern uint8_t userID;
+extern uint8_t orderID;
+extern uint8_t droneID;
 extern uint8_t stationary;
 extern uint8_t dMode;
 extern bool stopview;
 extern dji_f64_t distance_safe;
 extern dji_f32_t relHeight;
+extern int16_t yaw;
+extern dji_f32_t vel;
+extern dji_f32_t remainTime;
+extern time_t start_time;
+extern bool first_reply;
+extern dji_f64_t distanceTotal;
+extern dji_f64_t cruiseSpeed;
 extern const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[];
 
 /* Exported functions --------------------------------------------------------*/
@@ -92,9 +101,10 @@ T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg);
 T_DjiReturnCode DjiTest_FcSubscriptionRunSample(void);
 T_DjiReturnCode DjiTest_FcSubscriptionDataShowTrigger(void);
 T_DjiReturnCode DjiTest_FcSubscriptionGetTotalSatelliteNumber(uint8_t *number);
-void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, int gateway);
+void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, uint8_t order, uint8_t gateway);
 extern void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg);
 extern uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode displayMode);
+extern dji_f64_t haversine(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2);
 
 #ifdef __cplusplus
 }

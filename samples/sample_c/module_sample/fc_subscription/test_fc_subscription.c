@@ -35,7 +35,7 @@
 /* Private constants ---------------------------------------------------------*/
 #define FC_SUBSCRIPTION_TASK_FREQ         (1)
 #define FC_SUBSCRIPTION_TASK_STACK_SIZE   (1024)
-#define RADIUS 6371 // 地球平均半径，单位为公里
+// #define RADIUS 6371000 // 地球平均半径，单位为米
 // #define GoHomeAti 50 // 返航高度
 
 // #define TOPIC_REPLY       "gcs_reply/1/process"
@@ -52,9 +52,10 @@
 static void *UserFcSubscription_Task(void *arg);
 static T_DjiReturnCode DjiTest_FcSubscriptionReceiveQuaternionCallback(const uint8_t *data, uint16_t dataSize,
                                                                        const T_DjiDataTimestamp *timestamp);
-static dji_f64_t computeProgress(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2);
+// static dji_f64_t computeProgress(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2);
 static dji_f64_t deg2rad(dji_f64_t deg);
-static dji_f64_t haversine(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2);
+dji_f64_t haversine(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2);
+static void latLonToXYZ(double lat_deg, double lon_deg, double* x, double* y, double* z);
 static dji_f64_t point_to_segment_distance(dji_f64_t latA, dji_f64_t lonA, dji_f64_t latB, dji_f64_t lonB, dji_f64_t latP, dji_f64_t lonP);
 // static uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode displayMode);
 
@@ -66,8 +67,9 @@ static uint32_t s_userFcSubscriptionDataCnt = 0;
 static MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
 static MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 // static dji_f64_t targetLat=0, targetLon=0;
-static dji_f64_t distanceTotal = 0;
+// static dji_f64_t distanceTotal = 0;
 static MQTTAsync client;
+static time_t last_time;
 // static bool in_air = false;
 // static const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[] = {
 const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[] = {
@@ -93,12 +95,20 @@ uint8_t remainingBattery = 0;
 DroneStatus droneStatus =  {0};
 pthread_mutex_t statusMutex = PTHREAD_MUTEX_INITIALIZER;
 dji_f64_t targetLat=0, targetLon=0;
-uint8_t userID=0;
+uint8_t orderID=0;
+uint8_t droneID=0;
 uint8_t stationary=0;
 uint8_t dMode=0;
 bool stopview=false;
 dji_f64_t distance_safe=0;
 dji_f32_t relHeight=0;
+int16_t yaw = 0;
+dji_f32_t vel=0;
+dji_f32_t remainTime=0;
+time_t start_time;
+bool first_reply = true;
+dji_f64_t distanceTotal = 0;
+dji_f64_t cruiseSpeed = 1;
 
 /* Exported functions definition ---------------------------------------------*/
 T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg)
@@ -140,14 +150,14 @@ T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg)
     //     USER_LOG_DEBUG("Subscribe topic quaternion success.");
     // }
 
-    // djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_VELOCITY, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
-    //                                            NULL);
-    // if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-    //     USER_LOG_ERROR("Subscribe topic velocity error.");
-    //     return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
-    // } else {
-    //     USER_LOG_DEBUG("Subscribe topic velocity success.");
-    // }
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_VELOCITY, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic velocity error.");
+        return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
+    } else {
+        USER_LOG_DEBUG("Subscribe topic velocity success.");
+    }
 
     djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_GPS_POSITION, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
                                                NULL);
@@ -234,6 +244,13 @@ T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg)
                                                NULL);
     if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         USER_LOG_ERROR("Subscribe topic avoid data failed,error code:0x%08llX", djiStat);
+        return djiStat;
+    }
+
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW, DJI_DATA_SUBSCRIPTION_TOPIC_10_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic rtk yaw failed,error code:0x%08llX", djiStat);
         return djiStat;
     }
 
@@ -416,6 +433,7 @@ static void *UserFcSubscription_Task(void *arg)
     T_DjiFcSubscriptionFlightStatus flightStatus = {0};
     T_DjiFcSubscriptionDisplaymode displayMode = {0};
     T_DjiFcSubscriptionHeightFusion heightFusion = {0};
+    T_DjiFcSubscriptionRtkYaw rtkYaw = {0};
     T_DjiOsalHandler *osalHandler = NULL;
 
     // uint8_t is_RTK_ready = 0;
@@ -428,23 +446,26 @@ static void *UserFcSubscription_Task(void *arg)
     USER_UTIL_UNUSED(arg);
     osalHandler = DjiPlatform_GetOsalHandler();
 
+
     while (1) {
         osalHandler->TaskSleepMs(1000 / FC_SUBSCRIPTION_TASK_FREQ);
+        // printf("test_fc_subscription.c----------------------------------\n");
 
-        // djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_VELOCITY,
-        //                                                   (uint8_t *) &velocity,
-        //                                                   sizeof(T_DjiFcSubscriptionVelocity),
-        //                                                   &timestamp);
-        // if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        //     USER_LOG_ERROR("get value of topic velocity error.");
-        // }
-
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_VELOCITY,
+                                                          (uint8_t *) &velocity,
+                                                          sizeof(T_DjiFcSubscriptionVelocity),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("get value of topic velocity error.");
+        }
         // if (s_userFcSubscriptionDataShow == true) {
         //     USER_LOG_INFO("velocity: x %f y %f z %f, healthFlag %d.", velocity.data.x, velocity.data.y,
         //                   velocity.data.z, velocity.health);
-        //     printf("test_fc_subscription.c++++++++++++++++++++++++++++++++\n");
         // }
-        printf("test_fc_subscription.c----------------------------------\n");
+        vel = sqrt(pow(velocity.data.x,2)+pow(velocity.data.y,2));
+        if (s_userFcSubscriptionDataShow == true) {
+            USER_LOG_INFO("Current speed: %f, speedZ: %f.\n", vel, velocity.data.z);
+        }
 
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_GPS_POSITION,
                                                           (uint8_t *) &gpsPosition,
@@ -454,9 +475,9 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of topic gps position error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("gps position: x %f y %f z %f.", gpsPosition.x*1e-7, gpsPosition.y*1e-7, gpsPosition.z*1e-3);
-        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("gps position: x %f y %f z %f.", gpsPosition.x*1e-7, gpsPosition.y*1e-7, gpsPosition.z*1e-3);
+        // }
 
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_GPS_DETAILS,
                                                           (uint8_t *) &gpsDetails,
@@ -466,14 +487,14 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of topic gps details error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("gps total satellite number used: %d %d %d.\nGPS fixState: %f.",
-                          gpsDetails.gpsSatelliteNumberUsed,
-                          gpsDetails.glonassSatelliteNumberUsed,
-                          gpsDetails.totalSatelliteNumberUsed,
-                          gpsDetails.fixState);
-            s_totalSatelliteNumberUsed = gpsDetails.totalSatelliteNumberUsed;
-        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("gps total satellite number used: %d %d %d.\nGPS fixState: %f.",
+        //                   gpsDetails.gpsSatelliteNumberUsed,
+        //                   gpsDetails.glonassSatelliteNumberUsed,
+        //                   gpsDetails.totalSatelliteNumberUsed,
+        //                   gpsDetails.fixState);
+        // }
+        s_totalSatelliteNumberUsed = gpsDetails.totalSatelliteNumberUsed;
 
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_HOME_POINT_INFO,
                                                           (uint8_t *) &homepointInfo,
@@ -483,21 +504,13 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of homepoint info error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("Homepoint info: lat->%f, lon->%f.", homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI));
-        }
-        if(isin_mission)
-        {
-            distanceTotal = computeProgress(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon);
-            USER_LOG_INFO("distanceTotal: lat->%f, lon->%f. lat->%f, lon->%f.", homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon);
-        }
-        // pthread_mutex_lock(&homeMutex); // 加锁以保护对共享资源的访问
-        // homePoint.homeLatitude = homepointInfo.latitude;
-        // homePoint.homeLongitude = homepointInfo.longitude;
-        // pthread_mutex_unlock(&homeMutex); // 解锁
-        // if(isin_mission && in_air)
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("Homepoint info: lat->%f, lon->%f.", homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI));
+        // }
+        // if(isin_mission)
         // {
-        //     distanceTotal = computeProgress(homepointInfo.latitude, homepointInfo.longitude, targetLat, targetLon);
+        //     distanceTotal = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon);
+        //     USER_LOG_INFO("distanceTotal: lat->%f, lon->%f. lat->%f, lon->%f.", homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon);
         // }
 
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_POSITION_INFO,
@@ -508,9 +521,9 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of topic rtk position info error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("RTK position solution state: %d.", rtkPositionInfo);
-        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("RTK position solution state: %d.", rtkPositionInfo);
+        // }
         if(rtkPositionInfo != is_RTK_ready)
         {
             is_RTK_ready = rtkPositionInfo;
@@ -524,12 +537,12 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of rtk position error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("RTK position: %lf %lf %f.",
-                          rtkPosition.longitude,
-                          rtkPosition.latitude,
-                          rtkPosition.hfsl);
-        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("RTK position: %lf %lf %f.",
+        //                   rtkPosition.longitude,
+        //                   rtkPosition.latitude,
+        //                   rtkPosition.hfsl);
+        // }
         pthread_mutex_lock(&statusMutex); // 加锁以保护对共享资源的访问
         // droneStatus.rtkLongitude = rtkPosition.longitude;
         // droneStatus.rtkLatitude = rtkPosition.latitude;
@@ -539,24 +552,62 @@ static void *UserFcSubscription_Task(void *arg)
         droneStatus.rtkLongitude =  gpsPosition.x*1e-7;
         droneStatus.rtkLatitude = gpsPosition.y*1e-7;
         droneStatus.relativeHeight = gpsPosition.z*1e-3;
-        droneStatus.process = schedule;
-        printf("test_fc_subscription.c------------droneStatus----------------------%f,  %f,  %f\n", droneStatus.rtkLongitude, droneStatus.rtkLatitude, droneStatus.relativeHeight);
+        // droneStatus.process = schedule;
+        // printf("test_fc_subscription.c------------droneStatus----------------------%f,  %f,  %f\n", droneStatus.rtkLongitude, droneStatus.rtkLatitude, droneStatus.relativeHeight);
         pthread_mutex_unlock(&statusMutex); // 解锁
         if(isin_mission)
         {
-            // dji_f64_t distanceCurrent = computeProgress(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), rtkPosition.latitude, rtkPosition.longitude);
+            
+            // dji_f64_t distanceCurrent = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), rtkPosition.latitude, rtkPosition.longitude);
             // schedule = distanceCurrent / distanceTotal;
             // printf("test_fc_subscription.c------------isin_mission--------------replyProgress--------\n");
             // printf("distanceCurrent： %f;  distanceTotal: %f\n", distanceCurrent, distanceTotal);
             // replyProgress(client, true, true, schedule, 1);
             // distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, rtkPosition.latitude, rtkPosition.longitude);
-            dji_f64_t distanceCurrent = computeProgress(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), gpsPosition.y*1e-7, gpsPosition.x*1e-7);
-            schedule = distanceCurrent / distanceTotal;
-            printf("test_fc_subscription.c------------isin_mission--------------replyProgress--------\n");
-            printf("distanceCurrent： %f;  distanceTotal: %f\n", distanceCurrent, distanceTotal);
-            replyProgress(client, true, true, schedule, 1);
+            // dji_f64_t distanceCurrent = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), gpsPosition.y*1e-7, gpsPosition.x*1e-7);
+            distanceTotal = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon);
+            dji_f64_t distanceremain = haversine(gpsPosition.y*1e-7, gpsPosition.x*1e-7, targetLat, targetLon);
+            remainTime = distanceremain / cruiseSpeed; //这里的速度不用vel，因为takeoff时vel水平速度接近0，时间就会显示很大
+            USER_LOG_INFO("distanceTotal: %f, remainTime: %f.\n", distanceTotal, remainTime);
+            // 获取当前时间
+			time_t now;
+			time(&now);
+            if(first_reply)
+            {
+                first_reply = false;
+                time(&last_time);
+                // 转换为本地时间结构
+                struct tm *local = localtime(&now);
+                // 格式化输出时间，精确到秒
+                USER_LOG_INFO("当前时间是: %04d-%02d-%02d %02d:%02d:%02d\n",
+                    local->tm_year + 1900,
+                    local->tm_mon + 1,
+                    local->tm_mday,
+                    local->tm_hour,
+                    local->tm_min,
+                    local->tm_sec);
+                dji_f64_t diff = difftime(now, start_time);
+                USER_LOG_INFO("时间差是: %.0f 秒\n", diff);
+                replyProgress(client, true, true, schedule, orderID, droneID); //无人机完成任务并降落在地面且锁桨
+            } else {
+                dji_f64_t diff = difftime(now, last_time);
+                if(diff >= 5)
+                {
+                    time(&last_time);
+                    replyProgress(client, true, true, schedule, orderID, droneID); //无人机完成任务并降落在地面且锁桨
+                }
+            }
+			
+
+            
+            // schedule = distanceCurrent / distanceTotal;
+            // printf("test_fc_subscription.c------------isin_mission--------------replyProgress--------\n");
+            // printf("distanceCurrent： %f;  distanceTotal: %f\n", distanceCurrent, distanceTotal);
+            // replyProgress(client, true, true, schedule, orderid, droneid);
             distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
             printf("distance_safe: %f\n", distance_safe);
+            // USER_LOG_INFO("(distance_safe: %f)  (Homepoint_info: lat->%f, lon->%f.)  (targetPoint: lat->%f, lon->%f.)  (currentPoint: lat->%f, lon->%f.)\n", distance_safe, homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
+            // USER_LOG_INFO("Homepoint info: lat->%f, lon->%f.", homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI));
         } 
         
 
@@ -569,10 +620,10 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of altitude of homepoint error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("Altitude of homepoint: %f.", altitudeOfHomepoint);
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("Altitude of homepoint: %f.", altitudeOfHomepoint);
 
-        }
+        // }
 
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_BATTERY_INFO,
                                                           (uint8_t *) &batteryInfo,
@@ -582,11 +633,11 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of battery info error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("Battery info: %d.", batteryInfo.percentage);
-        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("Battery info: %d.", batteryInfo.percentage);
+        // }
         remainingBattery = batteryInfo.percentage;
-        printf("test_fc_subscription.c------------remainingBattery----------------------%d\n", remainingBattery);
+        // printf("test_fc_subscription.c------------remainingBattery----------------------%d\n", remainingBattery);
 
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_STATUS_FLIGHT,
                                                           (uint8_t *) &flightStatus,
@@ -596,15 +647,13 @@ static void *UserFcSubscription_Task(void *arg)
             USER_LOG_ERROR("get value of flight status error.");
         }
 
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("Flight status: %d.", flightStatus);
-        }
-        // if(flightStatus==0) stationary=true;
-        // else stationary=false;
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("Flight status: %d.", flightStatus);
+        // }
         stationary=flightStatus;
         if(finishedMission && flightStatus==0) {
             USER_LOG_INFO("test_fc_subscription.c------------finishedMission--------------replyProgress--------\n");
-            replyProgress(client, true, false, 1, 1); //无人机完成任务并降落在地面且锁桨
+            replyProgress(client, true, false, 1, orderID, droneID); //无人机完成任务并降落在地面且锁桨
             finishedMission = false;
             stopview = true;
         }
@@ -629,11 +678,24 @@ static void *UserFcSubscription_Task(void *arg)
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
             USER_LOG_ERROR("Get value of topic height fusion error, error code: 0x%08X", djiStat);
         }
-        if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_DEBUG("Timestamp: millisecond %u microsecond %u.", timestamp.millisecond, timestamp.microsecond);
-            USER_LOG_DEBUG("Relative height fusion is %f m", heightFusion);
-        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_DEBUG("Timestamp: millisecond %u microsecond %u.", timestamp.millisecond, timestamp.microsecond);
+        //     USER_LOG_DEBUG("Relative height fusion is %f m", heightFusion);
+        // }
         relHeight = heightFusion;
+
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_RTK_YAW,
+                                                          (uint8_t *) &rtkYaw,
+                                                          sizeof(T_DjiFcSubscriptionRtkYaw),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("Get value of topic height fusion error, error code: 0x%08X", djiStat);
+        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_DEBUG("Timestamp: millisecond %u microsecond %u.", timestamp.millisecond, timestamp.microsecond);
+        //     USER_LOG_DEBUG("Relative height fusion is %f m", heightFusion);
+        // }
+        yaw = rtkYaw;
         
 
         // 判断GPS和RTK差别大不
@@ -680,8 +742,9 @@ static T_DjiReturnCode DjiTest_FcSubscriptionReceiveQuaternionCallback(const uin
 }
 
 
-void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, int gateway)
+void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, uint8_t order, uint8_t gateway)
 {
+    struct timeval tv = {0};
     // 创建一个reply JSON对象
     cJSON *reply = cJSON_CreateObject();
 	// 检查是否成功创建了JSON对象
@@ -692,42 +755,95 @@ void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progr
 		}
 		return;
 	}
-	// 添加键值对到JSON对象
-	cJSON_AddNumberToObject(reply, "gateway", gateway);
-    cJSON_AddNumberToObject(reply, "userid", userID);
-    struct timeval tv = {0};
+
+    // 添加键值对到JSON对象
+    char url[50];
+    snprintf(url, sizeof(url), "rtmp://39.105.20.55:1935/live/streamtjyx%d", gateway);
+    cJSON_AddStringToObject(reply, "rtmpUrl", url);
+    cJSON_AddNumberToObject(reply, "helpOrderId", order);
+    cJSON_AddNumberToObject(reply, "droneId", gateway);   // 后续多台无人机根据距离判断修改droneId
+
+    cJSON *log = cJSON_CreateObject();
+    if (log == NULL) {
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr != NULL) {
+            fprintf(stderr, "Error before: %s\n", error_ptr);
+        }
+        // cJSON_Delete(root);
+        // return 1;
+        cJSON_Delete(reply);
+        return;
+    }
+    cJSON_AddNumberToObject(log, "orderId", order);
+    cJSON_AddNumberToObject(log, "droneId", gateway);   // 后续多台无人机根据距离判断修改droneId
+    cJSON_AddNumberToObject(log, "battery", remainingBattery);
+    cJSON_AddNumberToObject(log, "yaw", yaw);
+    pthread_mutex_lock(&statusMutex); // 加锁以保护对共享资源的访问
+    dji_f64_t currentLon = droneStatus.rtkLongitude;
+    dji_f64_t currentLat = droneStatus.rtkLatitude;
+    dji_f32_t curHei = droneStatus.relativeHeight;
+    pthread_mutex_unlock(&statusMutex); // 解锁
+    char str[100]; // 确保数组足够大以容纳结果字符串
+    snprintf(str, sizeof(str), "POINT(%f %f)", currentLon, currentLat);
+    cJSON_AddStringToObject(log, "coordinate", str);
+    cJSON_AddStringToObject(log, "photoUrl", "123.jpg");
     // 获取当前时间（包括秒和微秒）
-	gettimeofday(&tv, NULL);
-	// 计算毫秒
-	long milliseconds = tv.tv_sec * 1000 + tv.tv_usec / 1000;
-	printf("Timestamp in milliseconds: %ld\n", milliseconds);
-	cJSON_AddNumberToObject(reply, "timestamp", milliseconds);
+    gettimeofday(&tv, NULL);
+    // 计算毫秒
+    long milliseconds = tv.tv_sec * 1000 + tv.tv_usec / 1000;
+    printf("Timestamp in milliseconds: %ld\n", milliseconds);
+    cJSON_AddNumberToObject(log, "timestamp", milliseconds);
+    cJSON_AddNumberToObject(log, "altitude", curHei);
+    cJSON_AddNumberToObject(log, "speed", vel);
+    snprintf(str, sizeof(str), "LINESTRING(%f %f, %f %f)", currentLat, currentLon, targetLat, targetLon);
+    cJSON_AddStringToObject(log, "remainingPath", str);
+    cJSON_AddNumberToObject(log, "remainingTime", remainTime);
+
+    if(dMode==41||dMode==11)    cJSON_AddStringToObject(log, "flightMode", "TAKEOFF");
+    else if(dMode==14)  cJSON_AddStringToObject(log, "flightMode", "CRUISE");
+    else if(dMode==12 || dMode==33) cJSON_AddStringToObject(log, "flightMode", "LAND");
+    else    cJSON_AddStringToObject(log, "flightMode", "");
     if(!missionOK)
     {
-        cJSON_AddNumberToObject(reply, "result", 4); // 4 表示任务执行中段（无人机未完成某个指令）
-        printf("--------------------------------------- mission interrupt ----------");
+        // cJSON_AddNumberToObject(reply, "result", 4); // 4 表示任务执行中段（无人机未完成某个指令）
+        cJSON_AddBoolToObject(reply, "result", false); // false表示任务执行中段（无人机未完成某个指令）
+        cJSON_AddStringToObject(log, "workStatus", "INTERRUPTED");
+        cJSON_AddItemToObject(reply, "droneLog", log);
+        USER_LOG_INFO("--------------------------------------- mission interrupt ----------");
         isin_mission = false;
+        stopview = true;
     }
     else if(inMission)
     {
-        cJSON_AddNumberToObject(reply, "result", 5); // 5 表示任务执行正常（执行中)
+        // cJSON_AddNumberToObject(reply, "result", 5); // 5 表示任务执行正常（执行中)
+        cJSON_AddBoolToObject(reply, "result", true); // true表示务执行正常（执行中)
+        cJSON_AddStringToObject(log, "workStatus", "EXECUTING");
+        cJSON_AddItemToObject(reply, "droneLog", log);
+        // USER_LOG_INFO("--------------------------------------- mission ing…… ----------");
     }
     else
     {
-        cJSON_AddNumberToObject(reply, "result", 0); // 0 表示任务执行正常（执行完成，落地锁桨叶)
+        // cJSON_AddNumberToObject(reply, "result", 0); // 0 表示任务执行正常（执行完成，落地锁桨叶)
+        cJSON_AddBoolToObject(reply, "result", true); // true表示务执行正常（结束)
+        cJSON_AddStringToObject(log, "workStatus", "COMPLETED");
+        cJSON_AddItemToObject(reply, "droneLog", log);
         isin_mission = false;
+        USER_LOG_INFO("--------------------------------------- mission finished!!! ----------");
     }
-    // cJSON_AddBoolToObject(reply, "isin_mission", inMission); // bool missionOK, bool inMission一起判断的结果给"result"
-    cJSON_AddNumberToObject(reply, "progress", progress);
+    
+    
+    // // cJSON_AddBoolToObject(reply, "isin_mission", inMission); // bool missionOK, bool inMission一起判断的结果给"result"
+    // cJSON_AddNumberToObject(reply, "progress", progress);
 
     // 将JSON对象转换为字符串以便打印或保存
 	char *json_string = cJSON_Print(reply);
 	if (json_string == NULL) {
 		USER_LOG_ERROR("Failed to create JSON string.");
+        cJSON_Delete(log);
 		cJSON_Delete(reply);
 		return;
 	}
-	printf("JSON string: %s\n", json_string);
+	// USER_LOG_INFO("JSON string: %s\n", json_string);
 	// 在这里你可以将json_string保存到文件或发送到网络等
 	int rc;
 	pubmsg.payload = (void *)json_string;
@@ -739,31 +855,33 @@ void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progr
 	// 看MQTTAsync_sendMessage   github上面是否有说线程安全性
 	pthread_mutex_lock(&mqtt_publish_mutex);
 	if ((rc = MQTTAsync_sendMessage(client, TOPIC_REPLY, &pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
-		printf("Failed to start sendMessage, return code %d\n", rc);
-	} else {
-		printf("Message published to topic %s\n", TOPIC_REPLY);
-	}
+		USER_LOG_ERROR("Failed to start sendMessage, return code %d\n", rc);
+	} 
+    // else {
+	// 	USER_LOG_INFO("Message published to topic %s\n", TOPIC_REPLY);
+	// }
 	pthread_mutex_unlock(&mqtt_publish_mutex);
-	cJSON_Delete(reply);
-	cJSON_free(json_string);
+    // cJSON_Delete(log);
+	// cJSON_Delete(reply);
+	// cJSON_free(json_string);
 }
 
-static dji_f64_t computeProgress(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2)
-{
-    // 计算当前位置与起始点的距离
-    // 将经纬度转换为弧度
-    dji_f64_t phi1 = lat1 * M_PI / 180;
-    dji_f64_t phi2 = lat2 * M_PI / 180;
-    dji_f64_t delta_phi = (lat2 - lat1) * M_PI / 180;
-    dji_f64_t delta_lambda = (lon2 - lon1) * M_PI / 180;
+// static dji_f64_t computeProgress(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2)
+// {
+//     // 计算当前位置与起始点的距离
+//     // 将经纬度转换为弧度
+//     dji_f64_t phi1 = lat1 * M_PI / 180;
+//     dji_f64_t phi2 = lat2 * M_PI / 180;
+//     dji_f64_t delta_phi = (lat2 - lat1) * M_PI / 180;
+//     dji_f64_t delta_lambda = (lon2 - lon1) * M_PI / 180;
 
-    // 计算大圆距离
-    dji_f64_t a = sin(delta_phi/2) * sin(delta_phi/2) + cos(phi1) * cos(phi2) * sin(delta_lambda/2) * sin(delta_lambda/2);
-    dji_f64_t c = 2 * atan2(sqrt(a), sqrt(1-a));
-    dji_f64_t distance = RADIUS_EARTH * c;
+//     // 计算大圆距离
+//     dji_f64_t a = sin(delta_phi/2) * sin(delta_phi/2) + cos(phi1) * cos(phi2) * sin(delta_lambda/2) * sin(delta_lambda/2);
+//     dji_f64_t c = 2 * atan2(sqrt(a), sqrt(1-a));
+//     dji_f64_t distance = RADIUS_EARTH * c;
 
-    return distance;
-}
+//     return distance;
+// }
 
 // 将角度转换成弧度
 static dji_f64_t deg2rad(dji_f64_t deg) {
@@ -771,36 +889,89 @@ static dji_f64_t deg2rad(dji_f64_t deg) {
 }
 
 // 计算两个经纬度点之间的距离
-static dji_f64_t haversine(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2) {
+dji_f64_t haversine(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2) {
     dji_f64_t dLat = deg2rad(lat2 - lat1);
     dji_f64_t dLon = deg2rad(lon2 - lon1);
     dji_f64_t a = sin(dLat / 2) * sin(dLat / 2) +
                cos(deg2rad(lat1)) * cos(deg2rad(lat2)) *
                sin(dLon / 2) * sin(dLon / 2);
     dji_f64_t c = 2 * atan2(sqrt(a), sqrt(1-a));
-    return RADIUS * c;
+    return RADIUS_EARTH * c;
 }
+
+// 将经纬度转换为三维笛卡尔坐标
+static void latLonToXYZ(double lat_deg, double lon_deg, double* x, double* y, double* z) {
+    double lat = deg2rad(lat_deg);
+    double lon = deg2rad(lon_deg);
+    *x = RADIUS_EARTH * cos(lat) * cos(lon);
+    *y = RADIUS_EARTH * cos(lat) * sin(lon);
+    *z = RADIUS_EARTH * sin(lat);
+}
+
+// // 计算点到线段的最短距离
+// static dji_f64_t point_to_segment_distance(dji_f64_t latA, dji_f64_t lonA, dji_f64_t latB, dji_f64_t lonB, dji_f64_t latP, dji_f64_t lonP) {
+//     dji_f64_t distAB = haversine(latA, lonA, latB, lonB);
+//     if (distAB == 0) return haversine(latA, lonA, latP, lonP);
+
+//     // 计算点P到线段AB上的投影点D的比例
+//     dji_f64_t ratio = ((lonP - lonA) * (lonB - lonA) + (latP - latA) * (latB - latA)) /
+//                    (distAB * distAB);
+//     dji_f64_t latD = latA + ratio * (latB - latA);
+//     dji_f64_t lonD = lonA + ratio * (lonB - lonA);
+
+//     USER_LOG_INFO("(distance_safe: %f)  (Homepoint_info: lat->%f, lon->%f.)  (targetPoint: lat->%f, lon->%f.)  (currentPoint: lat->%f, lon->%f.)  (projectionPoint: lat->%f, lon->%f.)  ratio: %f.\n", distance_safe, latA, lonA, latB, lonB, latP, lonP, latD, lonD, ratio);
+//     // 如果投影点不在AB上，则选择最近的端点
+//     if (ratio < 0) {
+//         return haversine(latA, lonA, latP, lonP);
+//     } else if (ratio > 1) {
+//         return haversine(latB, lonB, latP, lonP);
+//     } else {
+//         return haversine(latD, lonD, latP, lonP);
+//     }
+// }
 
 // 计算点到线段的最短距离
 static dji_f64_t point_to_segment_distance(dji_f64_t latA, dji_f64_t lonA, dji_f64_t latB, dji_f64_t lonB, dji_f64_t latP, dji_f64_t lonP) {
-    dji_f64_t distAB = haversine(latA, lonA, latB, lonB);
-    if (distAB == 0) return haversine(latA, lonA, latP, lonP);
+    dji_f64_t Ax, Ay, Az, Bx, By, Bz, Px, Py, Pz;
+    latLonToXYZ(latA, lonA, &Ax, &Ay, &Az);
+    latLonToXYZ(latB, lonB, &Bx, &By, &Bz);
+    latLonToXYZ(latP, lonP, &Px, &Py, &Pz);
 
-    // 计算点P到线段AB上的投影点D的比例
-    dji_f64_t ratio = ((lonP - lonA) * (lonB - lonA) + (latP - latA) * (latB - latA)) /
-                   (distAB * distAB);
-    dji_f64_t latD = latA + ratio * (latB - latA);
-    dji_f64_t lonD = lonA + ratio * (lonB - lonA);
+    // 向量 AB 和 AP
+    dji_f64_t ABx = Bx - Ax, ABy = By - Ay, ABz = Bz - Az;
+    dji_f64_t APx = Px - Ax, APy = Py - Ay, APz = Pz - Az;
+    // 点积和长度平方
+    dji_f64_t ab2 = ABx*ABx + ABy*ABy + ABz*ABz;
+    dji_f64_t ap_ab = APx*ABx + APy*ABy + APz*ABz;
+    // 投影参数
+    dji_f64_t t = ap_ab / ab2; 
 
-    // 如果投影点不在AB上，则选择最近的端点
-    if (ratio < 0) {
-        return haversine(latA, lonA, latP, lonP);
-    } else if (ratio > 1) {
-        return haversine(latB, lonB, latP, lonP);
+    dji_f64_t closestLat, closestLon;
+    // 计算投影点的坐标
+    double projX = Ax + t * ABx;
+    double projY = Ay + t * ABy;
+    double projZ = Az + t * ABz;
+    // 将投影点转换为经纬度（反解）
+    double norm = sqrt(projX*projX + projY*projY + projZ*projZ);
+    projX /= norm;
+    projY /= norm;
+    projZ /= norm;
+
+    closestLat = asin(projZ) * 180.0 / M_PI;
+    closestLon = atan2(projY, projX) * 180.0 / M_PI;
+    USER_LOG_INFO("(distance_safe: %f)  (Homepoint_info: lat->%f, lon->%f.)  (targetPoint: lat->%f, lon->%f.)  (currentPoint: lat->%f, lon->%f.)  (projectionPoint: lat->%f, lon->%f.)  ratio: %f.\n", distance_safe, latA, lonA, latB, lonB, latP, lonP, closestLat, closestLon, t);
+
+    if (t < 0.0) {
+        // 最接近点A
+        return haversine(latP, lonP, latA, lonA);
+    } else if (t > 1.0) {
+        // 最接近点B
+        return haversine(latP, lonP, latB, lonB);
     } else {
-        return haversine(latD, lonD, latP, lonP);
+        return haversine(latP, lonP, closestLat, closestLon);
     }
 }
+
 
 uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode displayMode)
 {

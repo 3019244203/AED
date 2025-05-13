@@ -5,7 +5,9 @@
         "osal_socket.h": "c",
         "dji_sdk_app_info.h": "c",
         "dji_flight_controller.h": "c",
-        "test_fc_subscription.h": "c"
+        "test_fc_subscription.h": "c",
+        "stdbool.h": "c",
+        "mqttasync.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

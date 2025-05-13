@@ -56,16 +56,24 @@ static void DjiTest_PayloadCameraStreamCallback(E_DjiLiveViewCameraPosition posi
 static void* liveviewThreadFunc(void* arg);
 
                                                 /* Exported functions definition ---------------------------------------------*/
-T_DjiReturnCode DjiTest_LiveviewRunSample(E_DjiMountPosition mountPosition)
+T_DjiReturnCode DjiTest_LiveviewRunSample(uint8_t droneID)
 {
     pthread_t liveviewThread;
     T_DjiReturnCode returnCode;
 
     USER_LOG_INFO("Liveview sample start");
 
+    // 动态分配内存来存储 droneID
+    uint8_t* pDroneID = (uint8_t*)malloc(sizeof(uint8_t));
+    if (pDroneID == NULL) {
+        return DJI_ERROR_SYSTEM_MODULE_CODE_MEMORY_ALLOC_FAILED;
+    }
+    *pDroneID = droneID;
+
     // 创建并启动新线程来处理视频流
-    if (pthread_create(&liveviewThread, NULL, liveviewThreadFunc, (void*)&mountPosition) != 0) {
+    if (pthread_create(&liveviewThread, NULL, liveviewThreadFunc, (void*)pDroneID) != 0) {  // 直接将uint8_t droneID（这是一个整型变量）强制转换为void*类型，并将其作为线程函数的参数传递。这种做法是不正确的，因为指针和整数是不同的类型，尽管它们在内存中都表示为一定的位模式，这样的转换可能会导致未定义行为。正确的做法应该是使用指向droneID的指针来进行传递
         USER_LOG_ERROR("Failed to create liveview thread");
+        free(pDroneID); // 如果线程创建失败，记得释放内存
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
 
@@ -80,7 +88,8 @@ T_DjiReturnCode DjiTest_LiveviewRunSample(E_DjiMountPosition mountPosition)
 /* 线程入口函数 */
 static void* liveviewThreadFunc(void* arg)
 {
-    E_DjiMountPosition mountPosition = *(E_DjiMountPosition*)arg;
+    // E_DjiMountPosition mountPosition = *(E_DjiMountPosition*)arg;
+    uint8_t* pDroneID = (uint8_t*)arg;
     T_DjiReturnCode returnCode;
     T_DjiOsalHandler *osalHandler = DjiPlatform_GetOsalHandler();
     time_t currentTime = time(NULL);
@@ -103,7 +112,11 @@ static void* liveviewThreadFunc(void* arg)
         goto out;
     }
 
-    const char *command = "ffmpeg -re -i - -vcodec copy -f flv rtmp://39.105.20.55:1935/live/streamtjyx";
+    char command[256];
+    // 使用 snprintf 安全地格式化字符串
+    snprintf(command, sizeof(command), "ffmpeg -re -i - -vcodec copy -f flv rtmp://39.105.20.55:1935/live/streamtjyx%d", *pDroneID);
+    free(pDroneID);
+    // const char *command = "ffmpeg -re -i - -vcodec copy -f flv rtmp://39.105.20.55:1935/live/streamtjyx";
     ffmpeg_pipe = popen(command, "w");
     if (!ffmpeg_pipe) {
         printf("Failed to start ffmpeg\n");
@@ -146,7 +159,11 @@ static void* liveviewThreadFunc(void* arg)
         }
     }
 
-    
+    // if (ffmpeg_pipe) {  // 不能放在这，否则报错free(): invalid pointer  已放弃        
+    //     pclose(ffmpeg_pipe);
+    //     ffmpeg_pipe = NULL;
+    // }
+
     USER_LOG_INFO("--> Step 3: Stop h264 stream of the fpv and selected payload\r\n");
     if (aircraftInfoBaseInfo.aircraftSeries == DJI_AIRCRAFT_SERIES_M300 ||
         aircraftInfoBaseInfo.aircraftSeries == DJI_AIRCRAFT_SERIES_M350 ||
@@ -159,7 +176,11 @@ static void* liveviewThreadFunc(void* arg)
     }
     USER_LOG_INFO("Fpv stream is saved to file: %s", s_fpvCameraStreamFilePath);
 
-    
+    if (ffmpeg_pipe) {      // 应该放在这个位置
+        pclose(ffmpeg_pipe);
+        ffmpeg_pipe = NULL;
+    }
+
 
     USER_LOG_INFO("--> Step 4: Deinit liveview module");
     returnCode = DjiLiveview_Deinit();
@@ -168,10 +189,10 @@ static void* liveviewThreadFunc(void* arg)
         goto out;
     }
 
-    if (ffmpeg_pipe) {
-        pclose(ffmpeg_pipe);
-        ffmpeg_pipe = NULL;
-    }
+    // if (ffmpeg_pipe) {   // 放在这里也没报错
+    //     pclose(ffmpeg_pipe);
+    //     ffmpeg_pipe = NULL;
+    // }
 
 out:
     USER_LOG_INFO("Liveview sample end");

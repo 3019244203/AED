@@ -72,8 +72,8 @@
 #define DJI_SYSTEM_RESULT_STR_MAX_SIZE  (128)
 
 #define DJI_USE_WIDGET_INTERACTION       0
-#define INTERVAL 1 // 每隔1秒发布一次
-#define TOPIC_SEND       "gcs_pub/1/state"
+#define INTERVAL 10 // 每隔1秒发布一次
+#define TOPIC_HEART       "heartBeat/topic"
 #define MAX_JSON_STRING_LENGTH 1024 // 根据实际情况调整大小
 
 /* Private types -------------------------------------------------------------*/
@@ -112,7 +112,7 @@ static MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
 static MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 // 声明一个全局指针，但不在此处初始化
 static cJSON *root = NULL;
-static char jsonBuffer[MAX_JSON_STRING_LENGTH];
+// static char jsonBuffer[MAX_JSON_STRING_LENGTH];
 
 /* Exported functions definition ---------------------------------------------*/
 int main(int argc, char **argv)
@@ -136,6 +136,8 @@ int main(int argc, char **argv)
 		rc = EXIT_FAILURE;
 		MQTTAsync_destroy(&client);
 	}
+
+    // printf("#######################################################################################\n");
     // 设置连接选项
     conn_opts.keepAliveInterval = 20;
 	conn_opts.cleansession = 1;
@@ -148,13 +150,13 @@ int main(int argc, char **argv)
     // MQTTClient_connect(client, &connOpts);
     if ((rc = MQTTAsync_connect(client, &conn_opts)) != MQTTASYNC_SUCCESS)
 	{
-		printf("Failed to start connect, return code %d\n", rc);
+		USER_LOG_ERROR("Failed to start connect, return code %d\n", rc);
 		rc = EXIT_FAILURE;
 		MQTTAsync_destroy(&client);
 	} else {
-		printf("---------------------Successfully start connect, return code-------------------------------- %d\n", rc);
+		USER_LOG_INFO("---------------------Successfully start connect, return code-------------------------------- %d\n", rc);
 	}
-	printf("--connect finish, %d; Subscribe succeed, %d; Successful disconnect, %d\n", finished, subscribed, disc_finished);
+	USER_LOG_INFO("--connect finish, %d; Subscribe succeed, %d; Successful disconnect, %d\n", finished, subscribed, disc_finished);
 
     // 订阅主题
     // MQTTClient_subscribe(client, "gcs_receive/1/target_pos", 2);
@@ -190,6 +192,7 @@ int main(int argc, char **argv)
         USER_LOG_ERROR("Fill user info error, please check user info config");
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
+    printf("#######################################################################################\n");
 
     /*!< Step 3: Initialize the Payload SDK core by your application information. */
     returnCode = DjiCore_Init(&userInfo);
@@ -197,12 +200,14 @@ int main(int argc, char **argv)
         USER_LOG_ERROR("Core init error");
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
+    printf("PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP\n");
 
     returnCode = DjiAircraftInfo_GetBaseInfo(&aircraftInfoBaseInfo);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         USER_LOG_ERROR("get aircraft base info error");
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
+    printf("TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTt\n");
 
     returnCode = DjiAircraftInfo_GetAircraftVersion(&aircraftInfoVersion);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
@@ -212,7 +217,7 @@ int main(int argc, char **argv)
                         aircraftInfoVersion.minorVersion, aircraftInfoVersion.modifyVersion,
                         aircraftInfoVersion.debugVersion);
     }
-
+    
     returnCode = DjiCore_SetAlias("AED");
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
         USER_LOG_ERROR("set alias error");
@@ -232,6 +237,8 @@ int main(int argc, char **argv)
         USER_LOG_ERROR("set serial number error");
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
+
+    
 
     /*!< Step 4: Initialize the selected modules by macros in dji_sdk_config.h . */
 // #ifdef CONFIG_MODULE_SAMPLE_POWER_MANAGEMENT_ON
@@ -390,20 +397,35 @@ int main(int argc, char **argv)
 
 void publish_status(MQTTAsync client) {
 
-    // cJSON *root = cJSON_CreateObject();
-    // 清空之前的JSON对象内容
-    cJSON_DeleteItemFromObject(root, "longitude");
-    cJSON_DeleteItemFromObject(root, "latitude");
-    cJSON_DeleteItemFromObject(root, "relative_height");
-    cJSON_DeleteItemFromObject(root, "process");
+    // // cJSON *root = cJSON_CreateObject();
+    // // 清空之前的JSON对象内容
+    // // cJSON_DeleteItemFromObject(root, "longitude");
+    // // cJSON_DeleteItemFromObject(root, "latitude");
+    // // cJSON_DeleteItemFromObject(root, "relative_height");
+    // // cJSON_DeleteItemFromObject(root, "process");
+    cJSON_DeleteItemFromObject(root, "id");
+    cJSON_DeleteItemFromObject(root, "workStatus");
+    cJSON_DeleteItemFromObject(root, "onlineStatus");
+    cJSON_DeleteItemFromObject(root, "battery");
+    cJSON_DeleteItemFromObject(root, "airportId");
+    cJSON_DeleteItemFromObject(root, "coordinate");
     
+    cJSON_AddNumberToObject(root, "id", droneID);
+    if(isin_mission)    cJSON_AddStringToObject(root, "workStatus", "EXECUTING");
+    else    cJSON_AddStringToObject(root, "workStatus", "IDLE");  // 其他两个状态可以通过和机舱交互得到
+    
+    cJSON_AddStringToObject(root, "onlineStatus", "ONLINE");
+    cJSON_AddNumberToObject(root, "battery", remainingBattery);
+    cJSON_AddNumberToObject(root, "airportId", 13);
+    char str[50]; 
     pthread_mutex_lock(&statusMutex); // 加锁以保护对共享资源的访问
     // 添加RTK位置信息
-    cJSON_AddNumberToObject(root, "longitude", droneStatus.rtkLongitude);
-    cJSON_AddNumberToObject(root, "latitude", droneStatus.rtkLatitude);
-    cJSON_AddNumberToObject(root, "relative_height", droneStatus.relativeHeight);
-    // 添加进度信息
-    cJSON_AddNumberToObject(root, "process", droneStatus.process);
+	snprintf(str, sizeof(str), "POINT(%f %f)", droneStatus.rtkLongitude, droneStatus.rtkLatitude);
+    cJSON_AddStringToObject(root, "coordinate", str);
+    // cJSON_AddNumberToObject(root, "longitude", droneStatus.rtkLongitude);
+    // cJSON_AddNumberToObject(root, "latitude", droneStatus.rtkLatitude);
+    // cJSON_AddNumberToObject(root, "relative_height", droneStatus.relativeHeight);
+    // cJSON_AddNumberToObject(root, "process", droneStatus.process);
     pthread_mutex_unlock(&statusMutex); // 解锁
 
     // 将cJSON对象转换为字符串并发布到MQTT主题...
@@ -415,17 +437,18 @@ void publish_status(MQTTAsync client) {
         // return;
     // }
     // 直接将JSON写入预分配的缓冲区
+    char jsonBuffer[MAX_JSON_STRING_LENGTH];
     cJSON_PrintPreallocated(root, jsonBuffer, sizeof(jsonBuffer), false);
 
     int rc;
-    pubmsg.payload = (void *)jsonBuffer;;
+    pubmsg.payload = (void *)jsonBuffer;
     pubmsg.payloadlen = strlen(jsonBuffer);
     pubmsg.qos = QOS;
     pubmsg.retained = 0;
 
     pthread_mutex_lock(&mqtt_publish_mutex);
     printf("----connect finish, %d; Subscribe succeed, %d; Successful disconnect, %d\n", finished, subscribed, disc_finished);
-    if ((rc = MQTTAsync_sendMessage(client, TOPIC_SEND, &pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
+    if ((rc = MQTTAsync_sendMessage(client, TOPIC_HEART, &pubmsg, &opts)) != MQTTASYNC_SUCCESS) {
         printf("main.c-------------------publish_status--------\n");
         printf("Failed to start sendMessage, return code %d\n", rc);
     } else {
