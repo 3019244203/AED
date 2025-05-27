@@ -57,7 +57,7 @@ typedef struct {
 
 typedef struct {
     MQTTAsync client;
-    uint8_t orderID;
+    uint32_t orderID;
     uint8_t droneID;
 } ThreadParams;
 
@@ -80,7 +80,7 @@ extern pthread_mutex_t mqtt_publish_mutex;
 extern bool isin_mission;
 extern dji_f64_t schedule;
 extern dji_f64_t targetLat, targetLon;
-extern uint8_t orderID;
+extern uint32_t orderID;
 extern uint8_t droneID;
 extern uint8_t stationary;
 extern uint8_t dMode;
@@ -91,9 +91,15 @@ extern int16_t yaw;
 extern dji_f32_t vel;
 extern dji_f32_t remainTime;
 extern time_t start_time;
-extern bool first_reply;
+// extern bool first_reply;
 extern dji_f64_t distanceTotal;
 extern dji_f64_t cruiseSpeed;
+extern bool airportOpen;
+extern int serial_port;
+extern dji_f32_t closeCabinHeight;
+extern bool useCabin;
+extern bool initializedController;
+extern bool initializedWaypointV2;
 extern const T_DjiTestFlightControlDisplayModeStr s_flightControlDisplayModeStr[];
 
 /* Exported functions --------------------------------------------------------*/
@@ -101,10 +107,11 @@ T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg);
 T_DjiReturnCode DjiTest_FcSubscriptionRunSample(void);
 T_DjiReturnCode DjiTest_FcSubscriptionDataShowTrigger(void);
 T_DjiReturnCode DjiTest_FcSubscriptionGetTotalSatelliteNumber(uint8_t *number);
-void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, uint8_t order, uint8_t gateway);
+void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progress, uint32_t order, uint8_t gateway);
 extern void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg);
 extern uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode displayMode);
 extern dji_f64_t haversine(dji_f64_t lat1, dji_f64_t lon1, dji_f64_t lat2, dji_f64_t lon2);
+extern void control_airport(int choice);
 
 #ifdef __cplusplus
 }

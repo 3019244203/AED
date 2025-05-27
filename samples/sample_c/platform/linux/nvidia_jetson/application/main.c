@@ -75,6 +75,7 @@
 #define INTERVAL 10 // 每隔1秒发布一次
 #define TOPIC_HEART       "heartBeat/topic"
 #define MAX_JSON_STRING_LENGTH 1024 // 根据实际情况调整大小
+#define SERIAL_PORT "/dev/ttyTHS1"
 
 /* Private types -------------------------------------------------------------*/
 typedef struct {
@@ -82,6 +83,20 @@ typedef struct {
     char name[16];
     float pcpu;
 } T_ThreadAttribute;
+
+typedef struct
+{
+    int         pnum1;
+    int         pnum2;
+    int         apcs;
+    int         adcval;
+    int         io_in;
+    int         io_out;
+
+    uint32_t    crlt;
+    uint32_t    crdt;
+
+} apc_t;
 
 /* Private values -------------------------------------------------------------*/
 static FILE *s_djiLogFile;
@@ -99,6 +114,9 @@ static T_DjiReturnCode DjiTest_HighPowerApplyPinInit();
 // static T_DjiReturnCode DjiTest_WriteHighPowerApplyPin(E_DjiPowerManagementPinState pinState);
 static void DjiUser_NormalExitHandler(int signalNum);
 static void publish_status(MQTTAsync client);
+static void configure_serial_port();
+static void parse_status(char* response, apc_t* status);
+static ssize_t readline(int fd, char *buf, size_t count);
 
 // static MQTTClient client;
 // static MQTTClient_connectOptions connOpts;
@@ -114,11 +132,13 @@ static MQTTAsync_responseOptions opts = MQTTAsync_responseOptions_initializer;
 static cJSON *root = NULL;
 // static char jsonBuffer[MAX_JSON_STRING_LENGTH];
 
+static time_t last_send_time = 0;
+static double interval = 10.0; // 消息发送间隔时间（秒）
+
 /* Exported functions definition ---------------------------------------------*/
 int main(int argc, char **argv)
 {
-
-    printf("The value of myVariable is: %d\n", disc_finished);
+    USER_LOG_INFO("The value of myVariable is: %d\n", disc_finished);
     // 在main函数内初始化该指针
     root = cJSON_CreateObject();
     int rc;
@@ -126,18 +146,18 @@ int main(int argc, char **argv)
     // MQTTClient_create(&client, "mqtt://10.51.128.128:1883", "myClientID", MQTTCLIENT_PERSISTENCE_NONE, NULL);
     if((rc = MQTTAsync_create(&client, ADDRESS, CLIENTID,  MQTTCLIENT_PERSISTENCE_NONE, NULL)) != MQTTASYNC_SUCCESS)
     {
-        printf("Failed to create client, return code %d\n", rc);
+        USER_LOG_ERROR("Failed to create client, return code %d\n", rc);
         rc = EXIT_FAILURE;
         return rc;
     }
     if((rc = MQTTAsync_setCallbacks(client, client, connlost, msgarrvd, NULL)) != MQTTASYNC_SUCCESS)
     {
-		printf("Failed to set callbacks, return code %d\n", rc);
+		USER_LOG_ERROR("Failed to set callbacks, return code %d\n", rc);
 		rc = EXIT_FAILURE;
 		MQTTAsync_destroy(&client);
 	}
 
-    // printf("#######################################################################################\n");
+    USER_LOG_INFO("#######################################################################################\n");
     // 设置连接选项
     conn_opts.keepAliveInterval = 20;
 	conn_opts.cleansession = 1;
@@ -192,7 +212,7 @@ int main(int argc, char **argv)
         USER_LOG_ERROR("Fill user info error, please check user info config");
         return DJI_ERROR_SYSTEM_MODULE_CODE_SYSTEM_ERROR;
     }
-    printf("#######################################################################################\n");
+    printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 
     /*!< Step 3: Initialize the Payload SDK core by your application information. */
     returnCode = DjiCore_Init(&userInfo);
@@ -379,10 +399,49 @@ int main(int argc, char **argv)
         USER_LOG_ERROR("set name for monitor task fail.");
     }
 
+    configure_serial_port();
+    apc_t status;
+    char read_buf[128];
+    memset(read_buf, 0, sizeof(read_buf));
+    fd_set readfds;
+    int maxfd = serial_port;
+    printf("Starting... Reading data continuously, you can input commands:\n");
+    
     // 创建一个循环来定期发布状态信息
     while (1) {
-        sleep(INTERVAL); // 等待一段时间
-        publish_status(client); // 发布无人机状态信息
+        // sleep(INTERVAL); // 等待一段时间
+        time_t current_time = time(NULL);
+        double seconds_passed = difftime(current_time, last_send_time);
+        // 判断是否到达发送消息的时间点
+        if(seconds_passed >= interval) {
+            publish_status(client); // 发布无人机状态信息
+            last_send_time = current_time; // 更新上次发送时间为当前时间
+        }
+        
+        if(useCabin)
+        {
+            // 获取串口数据（机舱状态）
+            FD_ZERO(&readfds);
+            FD_SET(serial_port, &readfds);
+            // 阻塞等待串口输入，timeout NULL 表示无限等待
+            int ret = select(maxfd + 1, &readfds, NULL, NULL, NULL);
+            if (ret < 0) {
+                perror("select error");
+                break;
+            }
+            // 处理串口数据
+            if (FD_ISSET(serial_port, &readfds)) {
+                ssize_t n = readline(serial_port, read_buf, sizeof(read_buf));
+                if (n > 0) {
+                    printf("Received from serial: %s", read_buf);
+                    parse_status(read_buf, &status);
+                    if(status.apcs==2)  airportOpen=true;
+                    else airportOpen=false;
+                    printf("airportOpen: %d", airportOpen);
+                }
+            }
+        }
+        
     }
 
     // 清理资源并退出
@@ -393,6 +452,80 @@ int main(int argc, char **argv)
     // while (1) {
     //     sleep(1);
     // }
+}
+
+static void configure_serial_port() {
+    struct termios tty;
+    
+    serial_port = open(SERIAL_PORT, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (serial_port < 0) {
+        printf("Error %i from open: %s\n", errno, strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
+    tcgetattr(serial_port, &tty);
+
+    cfsetospeed(&tty, B115200);
+    cfsetispeed(&tty, B115200);
+
+    tty.c_cflag &= ~PARENB;
+    tty.c_cflag &= ~CSTOPB;
+    tty.c_cflag &= ~CSIZE;
+    tty.c_cflag |= CS8;
+
+    tty.c_cflag &= ~CRTSCTS;
+
+    tty.c_cflag |= CREAD | CLOCAL;
+
+    tty.c_lflag &= ~ICANON;
+    tty.c_lflag &= ~ECHO;
+    tty.c_lflag &= ~ECHOE;
+    tty.c_lflag &= ~ECHONL;
+    tty.c_lflag &= ~ISIG;
+
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+    tty.c_iflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
+
+    tty.c_oflag &= ~OPOST;
+    tty.c_oflag &= ~ONLCR;
+
+    tty.c_cc[VTIME] = 0;
+    tty.c_cc[VMIN] = 0;
+
+    tcflush(serial_port, TCIFLUSH);
+
+    if (tcsetattr(serial_port, TCSANOW, &tty) != 0) {
+        printf("Error %i from tcsetattr: %s\n", errno, strerror(errno));
+        close(serial_port);
+        exit(EXIT_FAILURE);
+    }
+}
+
+static ssize_t readline(int fd, char *buf, size_t count) {
+    size_t pos = 0;
+    while (pos < count - 1) {
+        ssize_t n = read(fd, buf + pos, 1);
+        if (n <= 0) {
+            if (n == 0 && pos > 0) break;
+            return n;
+        }
+        if (buf[pos] == '\n') {
+            pos++;
+            break;
+        }
+        pos++;
+    }
+    buf[pos] = '\0';
+    return pos;
+}
+
+static void parse_status(char* response, apc_t* status) {
+    sscanf(response, "<H,%d,%d,%d,%d,%d>", 
+           &status->pnum1, 
+           &status->apcs, 
+           &status->adcval, 
+           &status->io_in, 
+           &status->io_out);
 }
 
 void publish_status(MQTTAsync client) {
@@ -416,11 +549,11 @@ void publish_status(MQTTAsync client) {
     
     cJSON_AddStringToObject(root, "onlineStatus", "ONLINE");
     cJSON_AddNumberToObject(root, "battery", remainingBattery);
-    cJSON_AddNumberToObject(root, "airportId", 13);
+    cJSON_AddNumberToObject(root, "airportId", 1);
     char str[50]; 
     pthread_mutex_lock(&statusMutex); // 加锁以保护对共享资源的访问
     // 添加RTK位置信息
-	snprintf(str, sizeof(str), "POINT(%f %f)", droneStatus.rtkLongitude, droneStatus.rtkLatitude);
+	snprintf(str, sizeof(str), "POINT(%.9f %.9f)", droneStatus.rtkLongitude, droneStatus.rtkLatitude);
     cJSON_AddStringToObject(root, "coordinate", str);
     // cJSON_AddNumberToObject(root, "longitude", droneStatus.rtkLongitude);
     // cJSON_AddNumberToObject(root, "latitude", droneStatus.rtkLatitude);

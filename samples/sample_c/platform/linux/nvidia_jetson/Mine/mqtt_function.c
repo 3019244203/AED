@@ -75,9 +75,9 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 	struct timeval tv = {0};
 	MQTTAsync client = (MQTTAsync)context;
 
-    printf("Message arrived\n");
-    printf("     topic: %s\n", topicName);
-    printf("   message: %.*s\n", message->payloadlen, (char*)message->payload);
+    USER_LOG_INFO("Message arrived\n");
+    USER_LOG_INFO("     topic: %s\n", topicName);
+    USER_LOG_INFO("   message: %.*s\n", message->payloadlen, (char*)message->payload);
 	// usleep(15000000L);   // 在sleep的时间段内，若收到话题，会存到队列中，等这次回调完成后，会对队列中刚才的话题调用这个回调。只不过30>20,可能多次后会造成超时断开连接‘15秒就不会。
     // 解析消息内容，假设消息是JSON格式
     cJSON *root = cJSON_Parse((char *)message->payload);
@@ -102,7 +102,7 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 			cJSON *item = cJSON_GetObjectItem(root, "airportId");
 			if (item != NULL && cJSON_IsNumber(item)) {
 				printf("Parsed value for 'airportId': %d\n", item->valueint);
-				if(item->valueint!=13)	goto out;  // 不是这个机场地面站的信息，不处理
+				if(item->valueint!=1)	goto out;  // 不是这个机场地面站的信息，不处理
 			} else {
 				goto out;
 			}
@@ -122,14 +122,14 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 				cJSON *latitude_json = cJSON_GetObjectItemCaseSensitive(coord, "lat");
 				if (latitude_json && cJSON_IsNumber(latitude_json)) {
 					targetLatTemp = latitude_json->valuedouble;
-					printf("Latitude: %f\n", latitude_json->valuedouble);
+					printf("Latitude: %.9f\n", latitude_json->valuedouble);
 				} else {
 					goto out;
 				}
 				cJSON *longitude_json = cJSON_GetObjectItemCaseSensitive(coord, "lng");
 				if (longitude_json && cJSON_IsNumber(longitude_json)) {
 					targetLonTemp = longitude_json->valuedouble;
-					printf("Longitude: %f\n", longitude_json->valuedouble);
+					printf("Longitude: %.9f\n", longitude_json->valuedouble);
 				} else {
 					goto out;
 				}
@@ -215,15 +215,15 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 						cJSON_AddNumberToObject(log, "droneId", dronesArray[originalIndex].droneId);   // 后续多台无人机根据距离判断修改droneId
 						cJSON_AddNumberToObject(log, "battery", remainingBattery);
 						cJSON_AddNumberToObject(log, "yaw", yaw);
-						char str[50]; // 确保数组足够大以容纳结果字符串
+						char str[100]; // 确保数组足够大以容纳结果字符串
 						// 直接格式化两个double值并用空格分隔
-						snprintf(str, sizeof(str), "POINT(%f %f)", currentLon, currentLat);
+						snprintf(str, sizeof(str), "POINT(%.9f %.9f)", currentLon, currentLat);
 						// snprintf(str, sizeof(str), "%f", currentLon); // 安全地将double值格式化为字符串
 						cJSON_AddStringToObject(log, "coordinate", str);
 						cJSON_AddNumberToObject(log, "altitude", curHei);
 						cJSON_AddNumberToObject(log, "speed", vel);
 						
-						snprintf(str, sizeof(str), "LINESTRING(%f %f, %f %f)", currentLon, currentLat, targetLon, targetLat);
+						snprintf(str, sizeof(str), "LINESTRING(%.9f %.9f, %.9f %.9f)", currentLon, currentLat, targetLon, targetLat);
 						cJSON_AddStringToObject(log, "remainingPath", str);
 						cJSON_AddNumberToObject(log, "remainingTime", remainTime);
 						cJSON_AddStringToObject(log, "workStatus", "INTERRUPTED");
@@ -234,7 +234,6 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 						char *json_string = cJSON_Print(reply);
 						if (json_string == NULL) {
 							USER_LOG_ERROR("Failed to create JSON string.");
-							cJSON_Delete(log);
 							cJSON_Delete(reply);
 							// cJSON_Delete(root);
 							// return;
@@ -391,12 +390,11 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 			cJSON *item = cJSON_GetObjectItem(root, "airportId");
 			if (item != NULL && cJSON_IsNumber(item)) {
 				USER_LOG_INFO("Parsed value for 'airportId': %d\n", item->valueint);
-				if(item->valueint!=13)	goto out;  // 不是这个机场地面站的信息，不处理
+				if(item->valueint!=1)	goto out;  // 不是这个机场地面站的信息，不处理
 			} else {
 				goto out;
 			}
-			T_DjiOsalHandler *osalHandler = NULL;
-			osalHandler = DjiPlatform_GetOsalHandler();
+			T_DjiOsalHandler *osalHandler = osalHandler = DjiPlatform_GetOsalHandler();
 			if (osalHandler->TaskCreate("gohome_forceland_task", DjiTest_FlightControlGoHomeForceLandingTask,
                                 DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_gohomeForcelandThread) !=
 				DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
@@ -409,7 +407,7 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 			cJSON *item = cJSON_GetObjectItem(root, "airportId");
 			if (item != NULL && cJSON_IsNumber(item)) {
 				USER_LOG_INFO("Parsed value for 'airportId': %d\n", item->valueint);
-				if(item->valueint!=13)	goto out;  // 不是这个机场地面站的信息，不处理
+				if(item->valueint!=1)	goto out;  // 不是这个机场地面站的信息，不处理
 			} else {
 				goto out;
 			}
@@ -447,7 +445,7 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 			cJSON *item = cJSON_GetObjectItem(root, "airportId");
 			if (item != NULL && cJSON_IsNumber(item)) {
 				USER_LOG_INFO("Parsed value for 'airportId': %d\n", item->valueint);
-				if(item->valueint!=13)	goto out;  // 不是这个机场地面站的信息，不处理
+				if(item->valueint!=1)	goto out;  // 不是这个机场地面站的信息，不处理
 			} else {
 				goto out;
 			}
@@ -467,7 +465,7 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 			dji_f32_t curHei = droneStatus.relativeHeight;
 			pthread_mutex_unlock(&statusMutex); // 解锁
 			char str[50]; // 确保数组足够大以容纳结果字符串
-			snprintf(str, sizeof(str), "POINT(%f %f)", currentLat, currentLon);
+			snprintf(str, sizeof(str), "POINT(%.9f %.9f)", currentLat, currentLon);
 			cJSON_AddStringToObject(reply, "coordinate", str);
 			char *json_string = cJSON_Print(reply);
 			if (json_string == NULL) {
@@ -581,7 +579,7 @@ void onConnect(void* context, MQTTAsync_successData* response)
 	}
 
 	// ===== 添加发布消息的代码在这里 =====
-    const char *payload = "{\"airportId\": 13}";
+    const char *payload = "{\"airportId\": 1}";
     int payloadLen = strlen(payload);
 
     MQTTAsync_message pubmsg = MQTTAsync_message_initializer;
