@@ -205,7 +205,7 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTAsync_message *me
 				dji_f32_t curHei = droneStatus.relativeHeight;
 				pthread_mutex_unlock(&statusMutex); // 解锁
 				float disBposTstation = haversine(currentLat, currentLon, dronesArray[originalIndex].lat, dronesArray[originalIndex].lng); //后续要改station的坐标，可以开机从数据库读取
-				if(isin_mission || remainingBattery < 10 || disBposTstation > 7.5028235f || is_RTK_ready==50 || stationary!=0) // 这个是针对开发者   后续多台无人机改成map
+				if(isin_mission || remainingBattery < 10 || disBposTstation > 7.5028235f || is_RTK_ready!=50 || stationary!=0) // 这个是针对开发者   后续多台无人机改成map
 				{
 					if(i==dronesCount-1)
 					{

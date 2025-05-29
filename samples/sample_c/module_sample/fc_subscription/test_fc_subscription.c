@@ -226,6 +226,15 @@ T_DjiReturnCode DjiTest_FcSubscriptionStartService(void* arg)
         USER_LOG_DEBUG("Subscribe topic altitude of homepoint success.");
     }
 
+    djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_ALTITUDE_FUSED, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
+                                               NULL);
+    if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+        USER_LOG_ERROR("Subscribe topic altitude fused error.");
+        return DJI_ERROR_SYSTEM_MODULE_CODE_UNKNOWN;
+    } else {
+        USER_LOG_DEBUG("Subscribe topic altitude fused success.");
+    }
+
     djiStat = DjiFcSubscription_SubscribeTopic(DJI_FC_SUBSCRIPTION_TOPIC_BATTERY_INFO, DJI_DATA_SUBSCRIPTION_TOPIC_1_HZ,
                                                NULL);
     if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
@@ -450,6 +459,7 @@ static void *UserFcSubscription_Task(void *arg)
     T_DjiFcSubscriptionGpsDetails gpsDetails = {0};
     T_DjiFcSubscriptionRtkPositionInfo rtkPositionInfo = {0};
     T_DjiFcSubscriptionRtkPosition rtkPosition = {0};
+    T_DjiFcSubscriptionAltitudeFused altitudefused = {0};
     T_DjiFcSubscriptionAltitudeOfHomePoint altitudeOfHomepoint = {0};
     T_DjiFcSubscriptionWholeBatteryInfo batteryInfo = {0};
     T_DjiFcSubscriptionHomePointInfo homepointInfo = {0};
@@ -479,7 +489,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionVelocity),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of topic velocity error.");
+            USER_LOG_ERROR("get value of topic velocity error.\n");
         }
         // if (s_userFcSubscriptionDataShow == true) {
         //     USER_LOG_INFO("velocity: x %f y %f z %f, healthFlag %d.", velocity.data.x, velocity.data.y,
@@ -490,14 +500,34 @@ static void *UserFcSubscription_Task(void *arg)
         //     USER_LOG_INFO("Current speed: %f, speedZ: %f.\n", vel, velocity.data.z);
         // }
 
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_ALTITUDE_OF_HOMEPOINT,
+                                                          (uint8_t *) &altitudeOfHomepoint,
+                                                          sizeof(T_DjiFcSubscriptionAltitudeOfHomePoint),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("get value of altitude of homepoint error.\n");
+        }
+        // if (s_userFcSubscriptionDataShow == true) {
+        //     USER_LOG_INFO("Altitude of homepoint: %f.", altitudeOfHomepoint);
+        // }
+
+        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_ALTITUDE_FUSED,
+                                                          (uint8_t *) &altitudefused,
+                                                          sizeof(T_DjiFcSubscriptionAltitudeFused),
+                                                          &timestamp);
+        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            USER_LOG_ERROR("get value of topic altitude fused error.\n");
+        }
+        closeCabinHeight = altitudefused-altitudeOfHomepoint;
+
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_GPS_POSITION,
                                                           (uint8_t *) &gpsPosition,
                                                           sizeof(T_DjiFcSubscriptionGpsPosition),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of topic gps position error.");
+            USER_LOG_ERROR("get value of topic gps position error.\n");
         }
-        closeCabinHeight = gpsPosition.z*1e-3;
+        // closeCabinHeight = gpsPosition.z*1e-3;
 
         // if (s_userFcSubscriptionDataShow == true) {
         //     USER_LOG_INFO("gps position: x %f y %f z %f.", gpsPosition.x*1e-7, gpsPosition.y*1e-7, gpsPosition.z*1e-3);
@@ -508,7 +538,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionGpsDetails),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of topic gps details error.");
+            USER_LOG_ERROR("get value of topic gps details error.\n");
         }
 
         // if (s_userFcSubscriptionDataShow == true) {
@@ -525,7 +555,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionHomePointInfo),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of homepoint info error.");
+            USER_LOG_ERROR("get value of homepoint info error.\n");
         }
 
         // if (s_userFcSubscriptionDataShow == true) {
@@ -542,7 +572,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionRtkPositionInfo),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of topic rtk position info error.");
+            USER_LOG_ERROR("get value of topic rtk position info error.\n");
         }
 
         // if (s_userFcSubscriptionDataShow == true) {
@@ -558,7 +588,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionRtkPosition),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of rtk position error.");
+            USER_LOG_ERROR("get value of rtk position error.\n");
         }
 
         // if (s_userFcSubscriptionDataShow == true) {
@@ -569,12 +599,13 @@ static void *UserFcSubscription_Task(void *arg)
         //                   altitudeOfHomepoint);
         // }
         pthread_mutex_lock(&statusMutex); // 加锁以保护对共享资源的访问
-        // droneStatus.rtkLongitude = rtkPosition.longitude;
-        // droneStatus.rtkLatitude = rtkPosition.latitude;
+        droneStatus.rtkLongitude = rtkPosition.longitude;
+        droneStatus.rtkLatitude = rtkPosition.latitude;
         // droneStatus.relativeHeight = gpsPosition.z*1e-3;
-	    droneStatus.rtkLongitude =  gpsPosition.x*1e-7;
-        droneStatus.rtkLatitude = gpsPosition.y*1e-7;
-        droneStatus.relativeHeight = gpsPosition.z*1e-3;
+        droneStatus.relativeHeight = altitudefused-altitudeOfHomepoint;
+	    // droneStatus.rtkLongitude =  gpsPosition.x*1e-7;
+        // droneStatus.rtkLatitude = gpsPosition.y*1e-7;
+        // droneStatus.relativeHeight = gpsPosition.z*1e-3;
         printf("test_fc_subscription.c------------droneStatus----------------------%f,  %f,  %f\n", droneStatus.rtkLongitude, droneStatus.rtkLatitude, droneStatus.relativeHeight);
         pthread_mutex_unlock(&statusMutex); // 解锁
         if(isin_mission)
@@ -588,8 +619,8 @@ static void *UserFcSubscription_Task(void *arg)
             // distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, rtkPosition.latitude, rtkPosition.longitude);
             // dji_f64_t distanceCurrent = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), gpsPosition.y*1e-7, gpsPosition.x*1e-7);
             distanceTotal = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon);
-            // dji_f64_t distanceremain = haversine(rtkPosition.latitude, rtkPosition.longitude, targetLat, targetLon);
-            dji_f64_t distanceremain = haversine(gpsPosition.y*1e-7, gpsPosition.x*1e-7, targetLat, targetLon);
+            dji_f64_t distanceremain = haversine(rtkPosition.latitude, rtkPosition.longitude, targetLat, targetLon);
+            // dji_f64_t distanceremain = haversine(gpsPosition.y*1e-7, gpsPosition.x*1e-7, targetLat, targetLon);
             cruiseSpeed = distanceTotal / 240;
             if(cruiseSpeed<3)  cruiseSpeed=3;
             else if(cruiseSpeed>13)    cruiseSpeed=13;
@@ -631,8 +662,8 @@ static void *UserFcSubscription_Task(void *arg)
             // printf("test_fc_subscription.c------------isin_mission--------------replyProgress--------\n");
             // printf("distanceCurrent： %f;  distanceTotal: %f\n", distanceCurrent, distanceTotal);
             // replyProgress(client, true, true, schedule, orderid, droneid);
-            // distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, rtkPosition.latitude, rtkPosition.longitude);
-            distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
+            distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, rtkPosition.latitude, rtkPosition.longitude);
+            // distance_safe = point_to_segment_distance(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
             printf("distance_safe: %f\n", distance_safe);
             // USER_LOG_INFO("(distance_safe: %f)  (Homepoint_info: lat->%f, lon->%f.)  (targetPoint: lat->%f, lon->%f.)  (currentPoint: lat->%f, lon->%f.)\n", distance_safe, homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), targetLat, targetLon, rtkPosition.latitude, rtkPosition.longitude);
             // USER_LOG_INFO("Homepoint info: lat->%f, lon->%f.", homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI));
@@ -642,25 +673,31 @@ static void *UserFcSubscription_Task(void *arg)
         {
             if(accumulHoverTime >= 60)
             {
-                USER_LOG_INFO("accumulHoverTime: %f.", accumulHoverTime);
+                USER_LOG_INFO("accumulHoverTime: %f.\n", accumulHoverTime);
                 // 悬停超过1分钟执行返航
                 if (osalHandler->TaskCreate("gohome_afterhover_task", DjiTest_FlightControlGoHomeForceLandingTask,
                     FC_SUBSCRIPTION_TASK_STACK_SIZE, NULL, &s_gohomeafterhoverThread) !=
                     DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-                    USER_LOG_ERROR("user gohome afterhover task create error.");
+                    USER_LOG_ERROR("user gohome afterhover task create error.\n");
                 } else {
-                    USER_LOG_INFO("user gohome afterhover task create successfully.");
+                    USER_LOG_INFO("user gohome afterhover task create successfully.\n");
                 }
             } else {
-                dji_f64_t hoverDistanceHorizon = haversine(last_lat, last_lon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
-                dji_f32_t hoverDistanceVetical = fabs(last_hei-gpsPosition.z*1e-3);
+                dji_f64_t hoverDistanceHorizon = haversine(last_lat, last_lon, rtkPosition.latitude, rtkPosition.longitude);
+                // dji_f64_t hoverDistanceHorizon = haversine(last_lat, last_lon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
+                dji_f32_t hoverDistanceVetical = fabs(last_hei-(altitudefused-altitudeOfHomepoint));
                 time(&hoverNow);
                 dji_f64_t diff = difftime(hoverNow, hoverLast_time);
                 if(diff >= 5)
                 {
-                    last_lat = gpsPosition.y*1e-7;
-                    last_lon = gpsPosition.x*1e-7;
-                    USER_LOG_INFO("accumulHoverTime: %f, diff: %f, hoverDistanceHorizon: %f, hoverDistanceVetical: %f, last_lat: %f, last_lon: %f, gpsPosition.y*1e-7: %f, gpsPosition.x*1e-7: %f.", accumulHoverTime, diff, hoverDistanceHorizon, hoverDistanceVetical, last_lat, last_lon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
+                    last_lat = rtkPosition.latitude;
+                    last_lon = rtkPosition.longitude;
+                    last_hei = altitudefused-altitudeOfHomepoint;
+                    USER_LOG_INFO("accumulHoverTime: %f, diff: %f, hoverDistanceHorizon: %f, hoverDistanceVetical: %f, last_lat: %f, last_lon: %f, rtkPosition.latitude: %f, rtkPosition.longitude: %f.\n", accumulHoverTime, diff, hoverDistanceHorizon, hoverDistanceVetical, last_lat, last_lon, rtkPosition.latitude, rtkPosition.longitude);
+                    // last_lat = gpsPosition.y*1e-7;
+                    // last_lon = gpsPosition.x*1e-7;
+                    // last_hei = gpsPosition.z*1e-3;
+                    // USER_LOG_INFO("accumulHoverTime: %f, diff: %f, hoverDistanceHorizon: %f, hoverDistanceVetical: %f, last_lat: %f, last_lon: %f, gpsPosition.y*1e-7: %f, gpsPosition.x*1e-7: %f.", accumulHoverTime, diff, hoverDistanceHorizon, hoverDistanceVetical, last_lat, last_lon, gpsPosition.y*1e-7, gpsPosition.x*1e-7);
                     if(flightStatus==DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR && hoverDistanceHorizon<=2.0 && hoverDistanceVetical<=2.0)
                     {
                         accumulHoverTime += 5;
@@ -674,26 +711,12 @@ static void *UserFcSubscription_Task(void *arg)
         
         
 
-
-        djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_ALTITUDE_OF_HOMEPOINT,
-                                                          (uint8_t *) &altitudeOfHomepoint,
-                                                          sizeof(T_DjiFcSubscriptionAltitudeOfHomePoint),
-                                                          &timestamp);
-        if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of altitude of homepoint error.");
-        }
-
-        // if (s_userFcSubscriptionDataShow == true) {
-        //     USER_LOG_INFO("Altitude of homepoint: %f.", altitudeOfHomepoint);
-
-        // }
-
         djiStat = DjiFcSubscription_GetLatestValueOfTopic(DJI_FC_SUBSCRIPTION_TOPIC_BATTERY_INFO,
                                                           (uint8_t *) &batteryInfo,
                                                           sizeof(T_DjiFcSubscriptionWholeBatteryInfo),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of battery info error.");
+            USER_LOG_ERROR("get value of battery info error.\n");
         }
 
         // if (s_userFcSubscriptionDataShow == true) {
@@ -707,7 +730,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionFlightStatus),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of flight status error.");
+            USER_LOG_ERROR("get value of flight status error.\n");
         }
 
         // if (s_userFcSubscriptionDataShow == true) {
@@ -727,25 +750,26 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionDisplaymode),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("get value of displaymode status error.");
+            USER_LOG_ERROR("get value of displaymode status error.\n");
         }
         if (s_userFcSubscriptionDataShow == true) {
-            USER_LOG_INFO("Displaymode status: %d.", displayMode);
+            USER_LOG_INFO("Displaymode status: %d.\n", displayMode);
         }
         dMode = displayMode;
 
-        dji_f64_t distanceCurrent = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), gpsPosition.y*1e-7, gpsPosition.x*1e-7);
+        dji_f64_t distanceCurrent = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), rtkPosition.latitude, rtkPosition.longitude);
+        // dji_f64_t distanceCurrent = haversine(homepointInfo.latitude*(180.0/M_PI), homepointInfo.longitude*(180.0/M_PI), gpsPosition.y*1e-7, gpsPosition.x*1e-7);
         // if(displayMode==DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING && !airportOpen && closeCabinHeight<=20 && distanceCurrent<=1 && !sentCloseCommandToCabin && !sentResumeCommand)
-        if((displayMode==DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING || displayMode==DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING) && !airportOpen && closeCabinHeight<=20 && distanceCurrent<=1 && !sentResumeCommand)
+        if(useCabin && (displayMode==DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING || displayMode==DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING) && !airportOpen && closeCabinHeight<=20 && distanceCurrent<=1 && !sentResumeCommand)
         {
             hoverDueCode = true;
             if (osalHandler->TaskCreate("return_afteropencabin_task", DjiTest_FlightReturnAfterOpenCabinTask,
                 FC_SUBSCRIPTION_TASK_STACK_SIZE, NULL, &s_returnafteropencabinThread) !=
                 DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
                 hoverDueCode = false;
-                USER_LOG_ERROR("user return after open cabin task create error.");
+                USER_LOG_ERROR("user return after open cabin task create error.\n");
             } else {
-                USER_LOG_INFO("user return after open cabin task create successfully.");
+                USER_LOG_INFO("user return after open cabin task create successfully.\n");
             }
         }
 
@@ -756,7 +780,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           &timestamp);
 
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Get value of topic height fusion error, error code: 0x%08X", djiStat);
+            USER_LOG_ERROR("Get value of topic height fusion error, error code: 0x%08X.\n", djiStat);
         }
         // if (s_userFcSubscriptionDataShow == true) {
         //     USER_LOG_DEBUG("Timestamp: millisecond %u microsecond %u.", timestamp.millisecond, timestamp.microsecond);
@@ -769,7 +793,7 @@ static void *UserFcSubscription_Task(void *arg)
                                                           sizeof(T_DjiFcSubscriptionRtkYaw),
                                                           &timestamp);
         if (djiStat != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Get value of topic height fusion error, error code: 0x%08X", djiStat);
+            USER_LOG_ERROR("Get value of topic height fusion error, error code: 0x%08X.\n", djiStat);
         }
         // if (s_userFcSubscriptionDataShow == true) {
         //     USER_LOG_DEBUG("Timestamp: millisecond %u microsecond %u.", timestamp.millisecond, timestamp.microsecond);
@@ -807,10 +831,10 @@ static T_DjiReturnCode DjiTest_FcSubscriptionReceiveQuaternionCallback(const uin
 
     if (s_userFcSubscriptionDataShow == true) {
         if (s_userFcSubscriptionDataCnt++ % DJI_DATA_SUBSCRIPTION_TOPIC_50_HZ == 0) {
-            USER_LOG_INFO("receive quaternion data.");
-            USER_LOG_INFO("timestamp: millisecond %u microsecond %u.", timestamp->millisecond,
+            USER_LOG_INFO("receive quaternion data.\n");
+            USER_LOG_INFO("timestamp: millisecond %u microsecond %u.\n", timestamp->millisecond,
                           timestamp->microsecond);
-            USER_LOG_INFO("quaternion: %f %f %f %f.", quaternion->q0, quaternion->q1, quaternion->q2,
+            USER_LOG_INFO("quaternion: %f %f %f %f.\n", quaternion->q0, quaternion->q1, quaternion->q2,
                           quaternion->q3);
 
             USER_LOG_INFO("euler angles: pitch = %.2f roll = %.2f yaw = %.2f.\r\n", pitch, roll, yaw);
@@ -890,7 +914,7 @@ void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progr
         // cJSON_AddBoolToObject(reply, "result", false); // false表示任务执行中段（无人机未完成某个指令）
         cJSON_AddStringToObject(log, "workStatus", "INTERRUPTED");
         cJSON_AddItemToObject(reply, "droneLog", log);
-        USER_LOG_INFO("--------------------------------------- mission interrupt ----------");
+        USER_LOG_INFO("--------------------------------------- mission interrupt ----------\n");
         isin_mission = false;
         stopview = true;
         first_reply = true;
@@ -913,7 +937,7 @@ void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progr
         isin_mission = false;
         first_reply = true;
         accumulHoverTime = 0;
-        USER_LOG_INFO("--------------------------------------- mission finished!!! ----------");
+        USER_LOG_INFO("--------------------------------------- mission finished!!! ----------\n");
     }
     
     
@@ -923,7 +947,7 @@ void replyProgress(MQTTAsync client, bool missionOK, bool inMission, float progr
     // 将JSON对象转换为字符串以便打印或保存
 	char *json_string = cJSON_Print(reply);
 	if (json_string == NULL) {
-		USER_LOG_ERROR("Failed to create JSON string.");
+		USER_LOG_ERROR("Failed to create JSON string.\n");
         cJSON_Delete(log);
 		cJSON_Delete(reply);
 		return;
@@ -1076,14 +1100,14 @@ uint8_t DjiTest_FlightControlGetDisplayModeIndex(E_DjiFcSubscriptionDisplayMode 
 
 void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
 {
-    USER_LOG_DEBUG("Init flight Control Sample");
+    USER_LOG_DEBUG("Init flight Control Sample.\n");
     T_DjiReturnCode returnCode;
     T_DjiFlightControllerRidInfo ridInfo = {0};
 
     T_DjiOsalHandler *s_osalHandler  = DjiPlatform_GetOsalHandler();
     if (!s_osalHandler) 
     {
-        USER_LOG_ERROR("DjiPlatform_GetOsalHandler error.");
+        USER_LOG_ERROR("DjiPlatform_GetOsalHandler error.\n");
 
         return NULL;
     }
@@ -1095,7 +1119,7 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     {
         returnCode = DjiFlightController_Init(ridInfo);
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX", returnCode);
+            USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX.\n", returnCode);
             // goto out;
             return NULL;
         } else {
@@ -1109,7 +1133,7 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     //     return returnCode;
     // }
 
-    USER_LOG_INFO("Flight control go-home-force-landing sample start");
+    USER_LOG_INFO("Flight control go-home-force-landing sample start.\n");
     // // RC must be in p-mode.
     // USER_LOG_INFO("--> Step 1: Obtain joystick control authority");
     // returnCode = DjiFlightController_ObtainJoystickCtrlAuthority();
@@ -1128,7 +1152,7 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     E_DjiFlightControllerGoHomeAltitude goHomeAltitude;
     returnCode = DjiFlightController_GetGoHomeAltitude(&goHomeAltitude);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Get go home altitude failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Get go home altitude failed, error code: 0x%08X.\n", returnCode);
         goto out;
     }
     USER_LOG_INFO("Current go home altitude is %d m\r\n", goHomeAltitude);
@@ -1138,7 +1162,7 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     {
         returnCode = DjiFlightController_SetGoHomeAltitude(60);
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Set go home altitude to 60(m) failed, error code: 0x%08X", returnCode);
+            USER_LOG_ERROR("Set go home altitude to 60(m) failed, error code: 0x%08X.\n", returnCode);
             goto out;
         }
     }
@@ -1149,12 +1173,12 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     E_DjiFlightControllerObstacleAvoidanceEnableStatus enableStatus;
     returnCode = DjiFlightController_GetDownwardsVisualObstacleAvoidanceEnableStatus(&enableStatus);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error");
+        USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error.\n");
     }
-    USER_LOG_INFO("Start go home action");
+    USER_LOG_INFO("Start go home action.\n");
     returnCode = DjiFlightController_StartGoHome();
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Start to go home failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Start to go home failed, error code: 0x%08X.\n", returnCode);
         goto out;
     }
     
@@ -1166,13 +1190,13 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     }
 
     if (actionNotStarted == timeoutCycles) {
-        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+        USER_LOG_ERROR("%s start failed, now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME)].displayModeStr,
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
                             dMode)].displayModeStr);
         goto out;
     } else {
-        USER_LOG_INFO("Now flight is in %s.",
+        USER_LOG_INFO("Now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
         while (stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
             dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME) {
@@ -1188,7 +1212,7 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     //     }
     // }
     /*Start landing */
-    USER_LOG_INFO("Start landing action");
+    USER_LOG_INFO("Start landing action.\n");
     actionNotStarted = 0;
     timeoutCycles = 20;
     while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
@@ -1197,20 +1221,20 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     }
 
     if (actionNotStarted == timeoutCycles) {
-        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+        USER_LOG_ERROR("%s start failed, now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)].displayModeStr,
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
                             dMode)].displayModeStr);
         goto out;
     } else {
-        USER_LOG_INFO("Now flight is in %s.",
+        USER_LOG_INFO("Now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
         while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING &&
             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
             s_osalHandler->TaskSleepMs(1000);
-            if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
-                break;
-            }
+            // if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
+            //     break;
+            // }
         }
     }
     // if (!DjiTest_FlightControlCheckActionStarted(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)) {
@@ -1226,47 +1250,47 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     //     }
     // }
     /*Confirm Landing */
-    USER_LOG_INFO("Start confirm Landing and avoid ground action");
-    returnCode = DjiFlightController_StartConfirmLanding();
-    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
-        goto out;
-    }
-    if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
-        actionNotStarted = 0;
-        timeoutCycles = 20;
-        while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
-            actionNotStarted++;
-            s_osalHandler->TaskSleepMs(100);
-        }
+    USER_LOG_INFO("Start confirm Landing and avoid ground action.\n");
+    // returnCode = DjiFlightController_StartConfirmLanding();
+    // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    //     USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
+    //     goto out;
+    // }
+    // if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
+    //     actionNotStarted = 0;
+    //     timeoutCycles = 20;
+    //     while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
+    //         actionNotStarted++;
+    //         s_osalHandler->TaskSleepMs(100);
+    //     }
 
-        if (actionNotStarted == timeoutCycles) {
-            USER_LOG_ERROR("%s start failed, now flight is in %s.",
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
-                                dMode)].displayModeStr);
-            goto out;
-        } else {
-            USER_LOG_INFO("Now flight is in %s.",
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
-            while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
-                stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
-                s_osalHandler->TaskSleepMs(1000);
-            }
-        }
-    } else {
-        while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
-            stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
-            s_osalHandler->TaskSleepMs(1000);
-        }
-    }
+    //     if (actionNotStarted == timeoutCycles) {
+    //         USER_LOG_ERROR("%s start failed, now flight is in %s.",
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+    //                             dMode)].displayModeStr);
+    //         goto out;
+    //     } else {
+    //         USER_LOG_INFO("Now flight is in %s.",
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+    //         while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+    //             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+    //             s_osalHandler->TaskSleepMs(1000);
+    //         }
+    //     }
+    // } else {
+    //     while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+    //         stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+    //         s_osalHandler->TaskSleepMs(1000);
+    //     }
+    // }
     /*Landing finished check*/
     if (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS ||
         dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE) {
-        USER_LOG_INFO("Successful landing");
+        USER_LOG_INFO("Successful landing.\n");
     } else {
         USER_LOG_ERROR("Landing finished, but the aircraft is in an unexpected mode. "
-                       "Please connect DJI Assistant.");
+                       "Please connect DJI Assistant.\n");
         // return false;
         goto out;
     }
@@ -1289,19 +1313,19 @@ void *DjiTest_FlightControlGoHomeForceLandingTask(void *arg)
     // }
 
 out:
-    USER_LOG_INFO("Deinit Flight Control Sample");
+    USER_LOG_INFO("Deinit Flight Control Sample.\n");
     if(initializedController)
     {
         returnCode = DjiFlightController_DeInit();
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX",
+            USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX.\n",
                         returnCode);
             return NULL;
         } else {
             initializedController = false;
         }
     }
-    USER_LOG_INFO("Flight control go-home-force-landing sample end");
+    USER_LOG_INFO("Flight control go-home-force-landing sample end.\n");
 }
 
 static void send_command(const char* command) {
@@ -1331,32 +1355,34 @@ static void *DjiTest_FlightReturnAfterOpenCabinTask(void *arg)
     // 控制无人机悬停或者停止返航的动作
     returnCode = DjiFlightController_CancelLanding();
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Control hover failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Control hover failed, error code: 0x%08X.\n", returnCode);
     } else {
         sentResumeCommand = true;
-        USER_LOG_INFO("Control hover successfully.");
+        USER_LOG_INFO("Control hover successfully.\n");
     }
     
     // 给机舱发送打开的命令
-    if(useCabin)
-    {
-        control_airport(1);
-    }
+    // if(useCabin)
+    // {
+    //     control_airport(1);
+    // }
+    control_airport(1);
+    
     // 有一个标志记录已经发送，之后不再发送
     // sentCloseCommandToCabin = true;
     USER_LOG_INFO("Have sent close command to cabin, sentResumeCommand: %d.\n", sentResumeCommand);
 
-    // while(!airportOpen)
-    // {
-    //     sleep(1);
-    // }
+    while(!airportOpen)
+    {
+        sleep(1);
+    }
 
-    USER_LOG_INFO("Resume go home action");
+    USER_LOG_INFO("Resume go home action.\n");
     
     
     T_DjiOsalHandler *s_osalHandler  = DjiPlatform_GetOsalHandler();
     if (!s_osalHandler){
-        USER_LOG_ERROR("DjiPlatform_GetOsalHandler error.");
+        USER_LOG_ERROR("DjiPlatform_GetOsalHandler error.\n");
         sentResumeCommand = false;
         return NULL;
     }
@@ -1369,7 +1395,7 @@ static void *DjiTest_FlightReturnAfterOpenCabinTask(void *arg)
     {
         returnCode = DjiFlightController_Init(ridInfo);
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX", returnCode);
+            USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX.\n", returnCode);
             sentResumeCommand = false;
             return NULL;
         } else {
@@ -1379,27 +1405,27 @@ static void *DjiTest_FlightReturnAfterOpenCabinTask(void *arg)
     E_DjiFlightControllerGoHomeAltitude goHomeAltitude;
     returnCode = DjiFlightController_GetGoHomeAltitude(&goHomeAltitude);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Get go home altitude failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Get go home altitude failed, error code: 0x%08X.\n", returnCode);
     }
     USER_LOG_INFO("Current go home altitude is %d m\r\n", goHomeAltitude);
     if(goHomeAltitude!=60)
     {
         returnCode = DjiFlightController_SetGoHomeAltitude(60);
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Set go home altitude to 60(m) failed, error code: 0x%08X", returnCode);
+            USER_LOG_ERROR("Set go home altitude to 60(m) failed, error code: 0x%08X.\n", returnCode);
         }
     }
     E_DjiFlightControllerObstacleAvoidanceEnableStatus enableStatus;
     returnCode = DjiFlightController_GetDownwardsVisualObstacleAvoidanceEnableStatus(&enableStatus);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error");
+        USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error.\n");
     }
     returnCode = DjiFlightController_StartGoHome();
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Resume go home failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Resume go home failed, error code: 0x%08X.\n", returnCode);
         goto out;
     } else {    // 恢复返航成功
-        USER_LOG_INFO("user resume gohome task create successfully.");
+        USER_LOG_INFO("user resume gohome task create successfully.\n");
     }
     int actionNotStarted = 0;
     int timeoutCycles = 20;
@@ -1408,20 +1434,20 @@ static void *DjiTest_FlightReturnAfterOpenCabinTask(void *arg)
         s_osalHandler->TaskSleepMs(100);
     }
     if (actionNotStarted == timeoutCycles) {
-        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+        USER_LOG_ERROR("%s start failed, now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME)].displayModeStr,
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
                             dMode)].displayModeStr);
         goto out;
     } else {
-        USER_LOG_INFO("Now flight is in %s.",
+        USER_LOG_INFO("Now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
         while (stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
             dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_NAVI_GO_HOME) {
             s_osalHandler->TaskSleepMs(1000);// waiting for this action finished
         }
     }
-    USER_LOG_INFO("Start landing action");
+    USER_LOG_INFO("Start landing action\n");
     actionNotStarted = 0;
     timeoutCycles = 20;
     while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
@@ -1429,76 +1455,76 @@ static void *DjiTest_FlightReturnAfterOpenCabinTask(void *arg)
         s_osalHandler->TaskSleepMs(100);
     }
     if (actionNotStarted == timeoutCycles) {
-        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+        USER_LOG_ERROR("%s start failed, now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)].displayModeStr,
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
                             dMode)].displayModeStr);
         goto out;
     } else {
-        USER_LOG_INFO("Now flight is in %s.",
+        USER_LOG_INFO("Now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
         while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING &&
             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
             s_osalHandler->TaskSleepMs(1000);
-            if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
-                break;
-            }
+            // if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
+            //     break;
+            // }
         }
     }
-    USER_LOG_INFO("Start confirm Landing and avoid ground action");
-    returnCode = DjiFlightController_StartConfirmLanding();
-    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
-        goto out;
-    }
-    if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
-        actionNotStarted = 0;
-        timeoutCycles = 20;
-        while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
-            actionNotStarted++;
-            s_osalHandler->TaskSleepMs(100);
-        }
-        if (actionNotStarted == timeoutCycles) {
-            USER_LOG_ERROR("%s start failed, now flight is in %s.",
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
-                                dMode)].displayModeStr);
-            goto out;
-        } else {
-            USER_LOG_INFO("Now flight is in %s.",
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
-            while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
-                stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
-                s_osalHandler->TaskSleepMs(1000);
-            }
-        }
-    } else {
-        while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
-            stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
-            s_osalHandler->TaskSleepMs(1000);
-        }
-    }
+    USER_LOG_INFO("Start confirm Landing and avoid ground action.\n");
+    // returnCode = DjiFlightController_StartConfirmLanding();
+    // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    //     USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
+    //     goto out;
+    // }
+    // if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
+    //     actionNotStarted = 0;
+    //     timeoutCycles = 20;
+    //     while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
+    //         actionNotStarted++;
+    //         s_osalHandler->TaskSleepMs(100);
+    //     }
+    //     if (actionNotStarted == timeoutCycles) {
+    //         USER_LOG_ERROR("%s start failed, now flight is in %s.",
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+    //                             dMode)].displayModeStr);
+    //         goto out;
+    //     } else {
+    //         USER_LOG_INFO("Now flight is in %s.",
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+    //         while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+    //             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+    //             s_osalHandler->TaskSleepMs(1000);
+    //         }
+    //     }
+    // } else {
+    //     while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+    //         stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+    //         s_osalHandler->TaskSleepMs(1000);
+    //     }
+    // }
     /*Landing finished check*/
     if (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS ||
         dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE) {
-        USER_LOG_INFO("Successful landing");
+        USER_LOG_INFO("Successful landing.\n");
         hoverDueCode = false;
         // sentResumeCommand = true;
     } else {
         USER_LOG_ERROR("Landing finished, but the aircraft is in an unexpected mode. "
-                       "Please connect DJI Assistant.");
+                       "Please connect DJI Assistant.\n");
         // return false;
     }
 
 out:
     sentResumeCommand = false;
     // hoverDueCode = false;
-    USER_LOG_INFO("Deinit Flight Control Sample");
+    USER_LOG_INFO("Deinit Flight Control Sample.\n");
     if(initializedController)
     {
         returnCode = DjiFlightController_DeInit();
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX",
+            USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX.\n",
                         returnCode);
             return NULL;
         } else {

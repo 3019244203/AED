@@ -107,6 +107,7 @@ static uint32_t orderid;
 static uint8_t droneid;
 
 static bool landAftermission = true;
+static bool finishNotInterrupt = false;
 
 /* Private functions declaration ---------------------------------------------*/
 uint8_t DJiTest_WaypointV2GetMissionEventIndex(uint8_t eventID);
@@ -139,6 +140,7 @@ void *DjiTest_WaypointV2RunSample(void* arg)
     isin_mission = true;
     finishedMission = false;
     landAftermission = true;
+    finishNotInterrupt = false;
     
     // 改变最大速度
     // 清除之前的mission
@@ -185,17 +187,17 @@ void *DjiTest_WaypointV2RunSample(void* arg)
     T_DjiWaypointV2GlobalCruiseSpeed setGlobalCruiseSpeed = 0;
     T_DjiWaypointV2GlobalCruiseSpeed getGlobalCruiseSpeed = 0;
 
-    USER_LOG_INFO("Waypoint V2 sample start");
+    USER_LOG_INFO("Waypoint V2 sample start.\n");
     // DjiTest_WidgetLogAppend("Waypoint V2 sample start");
 
-    USER_LOG_INFO("--> Step 1: Init Waypoint V2 sample");
+    USER_LOG_INFO("--> Step 1: Init Waypoint V2 sample.\n");
     // DjiTest_WidgetLogAppend("--> Step 1: Init Waypoint V2 sample");
     if(!initializedWaypointV2)
     {
         returnCode = DjiTest_WaypointV2Init();
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Init waypoint V2 sample failed, error code: 0x%08X", returnCode);
-            USER_LOG_ERROR("Waypoint V2 sample end");
+            USER_LOG_ERROR("Init waypoint V2 sample failed, error code: 0x%08X.\n", returnCode);
+            USER_LOG_ERROR("Waypoint V2 sample end.\n");
             replyProgress(client, false, false, 0, orderid, droneid); // 初始化失败
             // return returnCode;
             return NULL;
@@ -217,13 +219,13 @@ void *DjiTest_WaypointV2RunSample(void* arg)
     // DjiTest_WidgetLogAppend("--> Step 3: Register waypoint V2 event and state callback\r\n");
     returnCode = DjiWaypointV2_RegisterMissionEventCallback(DjiTest_WaypointV2EventCallback);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Register waypoint V2 event failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Register waypoint V2 event failed, error code: 0x%08X.\n", returnCode);
         replyProgress(client, false, false, 0, orderid, droneid); // 回调函数注册失败
         goto out;
     }
     returnCode = DjiWaypointV2_RegisterMissionStateCallback(DjiTest_WaypointV2StateCallback);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Register waypoint V2 state failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Register waypoint V2 state failed, error code: 0x%08X.\n", returnCode);
         replyProgress(client, false, false, 0, orderid, droneid); // 回调函数注册失败
         goto out;
     }
@@ -233,7 +235,7 @@ void *DjiTest_WaypointV2RunSample(void* arg)
     // DjiTest_WidgetLogAppend("--> Step 4: Upload waypoint V2 mission\r\n");
     returnCode = DjiTest_WaypointV2UploadMission(targetLat, targetLon);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Upload waypoint V2 mission failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Upload waypoint V2 mission failed, error code: 0x%08X.\n", returnCode);
         replyProgress(client, false, false, 0, orderid, droneid); // 任务上传失败
         goto out;
     }
@@ -243,7 +245,7 @@ void *DjiTest_WaypointV2RunSample(void* arg)
     // DjiTest_WidgetLogAppend("--> Step 5: Start waypoint V2 mission\r\n");
     returnCode = DjiWaypointV2_Start();
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Start waypoint V2 mission failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Start waypoint V2 mission failed, error code: 0x%08X.\n", returnCode);
         replyProgress(client, false, false, 0, orderid, droneid); // 任务启动失败
         goto out;
     }
@@ -257,7 +259,7 @@ void *DjiTest_WaypointV2RunSample(void* arg)
     setGlobalCruiseSpeed = cruiseSpeed;
     returnCode = DjiWaypointV2_SetGlobalCruiseSpeed(setGlobalCruiseSpeed);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Set global cruise speed failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Set global cruise speed failed, error code: 0x%08X.\n", returnCode);
         replyProgress(client, false, false, 0, orderid, droneid);
         goto out;
     }
@@ -267,10 +269,10 @@ void *DjiTest_WaypointV2RunSample(void* arg)
     // DjiTest_WidgetLogAppend("--> Step 7: Get global cruise speed\r\n");
     returnCode = DjiWaypointV2_GetGlobalCruiseSpeed(&getGlobalCruiseSpeed);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Get global cruise speed failed, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Get global cruise speed failed, error code: 0x%08X.\n", returnCode);
         goto out;
     }
-    USER_LOG_INFO("Current global cruise speed is %f m/s", getGlobalCruiseSpeed);
+    USER_LOG_INFO("Current global cruise speed is %f m/s\n", getGlobalCruiseSpeed);
     osalHandler->TaskSleepMs(timeOutMs);
 
     // 关闭机舱线程
@@ -279,7 +281,7 @@ void *DjiTest_WaypointV2RunSample(void* arg)
         if (osalHandler->TaskCreate("closecabin_task", DjiTest_CloseCabinTask,
                         DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_closecabinThread) !=
             DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("user closecabin task create error.");
+            USER_LOG_ERROR("user closecabin task create error.\n");
         }
     }
     
@@ -290,12 +292,12 @@ void *DjiTest_WaypointV2RunSample(void* arg)
         //     control_airport(2);
         /*无人机偏离航线时执行自动返航*/
         if (distance_safe > MAX_DEVIATION) {
-            USER_LOG_ERROR("无人机偏离航线过远。");
+            USER_LOG_ERROR("无人机偏离航线过远。\n");
             // 停止任务并返航
             returnCode = DjiWaypointV2_Stop();
             // replyProgress(client, false, false, 0, 1); // 任务中断(由于无人机偏离航线太远)   可以注释掉，因为事件回调函数会判断任务中断并replyProgress
             if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-                USER_LOG_ERROR("Stop waypoint V2 mission failed, error code: 0x%08X", returnCode);
+                USER_LOG_ERROR("Stop waypoint V2 mission failed, error code: 0x%08X.\n", returnCode);
                 goto out;
             }
 
@@ -304,7 +306,7 @@ void *DjiTest_WaypointV2RunSample(void* arg)
 			if (osalHandler->TaskCreate("gohome_forceland_task", DjiTest_FlightControlGoHomeForceLandingTask,
                                 DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_gohomeForcelandThread) !=
 				DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-				USER_LOG_ERROR("user gohome forceland task create error.");
+				USER_LOG_ERROR("user gohome forceland task create error.\n");
 				goto out;
 			} else {
                 break;
@@ -358,7 +360,7 @@ out:
     {
         returnCode = DjiTest_WaypointV2DeInit();
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Deinit waypoint V2 sample failed, error code: 0x%08X", returnCode);
+            USER_LOG_ERROR("Deinit waypoint V2 sample failed, error code: 0x%08X.\n", returnCode);
             return NULL;
         } else {
             initializedWaypointV2 = false;
@@ -366,7 +368,7 @@ out:
     }
     
 
-    USER_LOG_INFO("Waypoint V2 sample end");
+    USER_LOG_INFO("Waypoint V2 sample end.\n");
     // DjiTest_WidgetLogAppend("Waypoint V2 sample end");
 
     // return returnCode;
@@ -541,12 +543,12 @@ uint8_t DjiTest_WaypointV2GetMissionStateIndex(uint8_t state)
 static T_DjiReturnCode DjiTest_WaypointV2EventCallback(T_DjiWaypointV2MissionEventPush eventData)
 {
     if (eventData.event == 0x01) {
-        USER_LOG_INFO("[%s]: Mission interrupted reason is 0x%x",
+        USER_LOG_INFO("[%s]: Mission interrupted reason is 0x%x.\n",
                       s_waypointV2EventStr[DJiTest_WaypointV2GetMissionEventIndex(eventData.event)].eventStr,
                       eventData.data.interruptReason);
         replyProgress(client, false, false, schedule, orderid, droneid);
     } else if (eventData.event == 0x02) {
-        USER_LOG_INFO("[%s]: Mission recover reason is 0x%x",
+        USER_LOG_INFO("[%s]: Mission recover reason is 0x%x.\n",
                       s_waypointV2EventStr[DJiTest_WaypointV2GetMissionEventIndex(eventData.event)].eventStr,
                       eventData.data.recoverProcess);
         if(eventData.data.recoverProcess == 0x12)
@@ -554,52 +556,53 @@ static T_DjiReturnCode DjiTest_WaypointV2EventCallback(T_DjiWaypointV2MissionEve
             replyProgress(client, false, false, schedule, orderid, droneid);
         }
     } else if (eventData.event == 0x03) {
-        USER_LOG_INFO("[%s]: Mission exit reason is 0x%02X, finishedAllMissExecTimes: %d",
+        USER_LOG_INFO("[%s]: Mission exit reason is 0x%02X, finishedAllMissExecTimes: %d.\n",
                       s_waypointV2EventStr[DJiTest_WaypointV2GetMissionEventIndex(eventData.event)].eventStr,
                       eventData.data.exitReason, eventData.data.T_DjiWaypointV2MissionExecEvent.finishedAllMissExecTimes); // finishedAllMissExecTimes是0
-        if(!finishedMission)  
+        if(!finishNotInterrupt)  
         // if(!eventData.data.T_DjiWaypointV2MissionExecEvent.finishedAllMissExecTimes) 
         {
             replyProgress(client, false, false, schedule, orderid, droneid); 
         }
     } else if (eventData.event == 0x10) {
-        USER_LOG_INFO("[%s]: Current waypoint index is %d",
+        USER_LOG_INFO("[%s]: Current waypoint index is %d.\n",
                       s_waypointV2EventStr[DJiTest_WaypointV2GetMissionEventIndex(eventData.event)].eventStr,
                       eventData.data.waypointIndex);
     } else if (eventData.event == 0x11) {
-        USER_LOG_INFO("[%s]: Current mission execute times is %d, eventData.data.exitReason: 0x%02X",
+        USER_LOG_INFO("[%s]: Current mission execute times is %d, eventData.data.exitReason: 0x%02X.\n",
                       s_waypointV2EventStr[DJiTest_WaypointV2GetMissionEventIndex(eventData.event)].eventStr,
                       eventData.data.T_DjiWaypointV2MissionExecEvent.currentMissionExecTimes, eventData.data.exitReason);
         if(eventData.data.T_DjiWaypointV2MissionExecEvent.finishedAllMissExecTimes)
         {
             /****这里会被触发三次，除了第一次，其他两次调用DjiTest_FlightControlGoHomeForceLandingTask会报错，因为第一次的还没执行完 */
-            USER_LOG_INFO("Finished mission!");
+            USER_LOG_INFO("Finished mission!\n");
             // replyProgress(client, true, false, 1, 1); // 不能在这里使用，应该在test_fc_subscription.c中使用，因为i这里不能获取到client，可以在test_fc_subscription.c中判断若finishedMission = true;则执行这个。
             // 此时任务完成但还没降落
             // isin_mission = false;
             finishedMission = true;
+            finishNotInterrupt = true;
             //--------------------------------降落&确定降落---------------
-            if(landAftermission)
-            {
-                landAftermission = false;
-                if (osalHandler->TaskCreate("forceland_task", DjiTest_FlightControlForceLandingTask,
-                                    DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_forcelandThread) !=
-                    DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-                    landAftermission = true;
-                    USER_LOG_ERROR("user forceland task create error.");
-                    replyProgress(client, false, false, schedule, orderid, droneid);
-                    return false;
-                }
-            }
+            // if(landAftermission)
+            // {
+            //     landAftermission = false;
+            //     if (osalHandler->TaskCreate("forceland_task", DjiTest_FlightControlForceLandingTask,
+            //                         DJI_TEST_GOHOME_FORCELAND_TASK_STACK_SIZE, NULL, &s_forcelandThread) !=
+            //         DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+            //         landAftermission = true;
+            //         USER_LOG_ERROR("user forceland task create error.\n");
+            //         replyProgress(client, false, false, schedule, orderid, droneid);
+            //         return false;
+            //     }
+            // }
 
         }
     } else if (eventData.event == 0x12) {
-        USER_LOG_INFO("[%s]: avoid obstacle state:%d",
+        USER_LOG_INFO("[%s]: avoid obstacle state:%d.\n",
                       s_waypointV2EventStr[DJiTest_WaypointV2GetMissionEventIndex(eventData.event)].eventStr,
                       eventData.data.avoidState);
     } else if (eventData.event == 0x30) {
         USER_LOG_INFO(
-            "[%s]: action id:%d, pre actuator state:%d, current actuator state:%d, result:0x%08llX",
+            "[%s]: action id:%d, pre actuator state:%d, current actuator state:%d, result:0x%08llX.\n",
             s_waypointV2EventStr[DJiTest_WaypointV2GetMissionEventIndex(eventData.event)].eventStr,
             eventData.data.T_DjiWaypointV2ActionExecEvent.actionId,
             eventData.data.T_DjiWaypointV2ActionExecEvent.preActuatorState,
@@ -642,7 +645,7 @@ static T_DjiReturnCode DjiTest_WaypointV2Init(void)
 
     returnCode = DjiWaypointV2_Init(); // DjiWaypointV2_Init();执行这个代码会使得mission终止执行吗
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Init waypoint V2 module error, stat:0x%08llX", returnCode);
+        USER_LOG_ERROR("Init waypoint V2 module error, stat:0x%08llX.\n", returnCode);
         return returnCode;
     }
 
@@ -662,7 +665,7 @@ static T_DjiReturnCode DjiTest_WaypointV2DeInit(void)
 
     returnCode = DjiWaypointV2_Deinit();
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Deinit waypoint V2 module error, stat:0x%08llX", returnCode);
+        USER_LOG_ERROR("Deinit waypoint V2 module error, stat:0x%08llX.\n", returnCode);
         return returnCode;
     }
 
@@ -684,13 +687,13 @@ static T_DjiReturnCode DjiTest_WaypointV2UploadMission(dji_f64_t waypointLat, dj
 
     /*! Init waypoint settings*/
     missionInitSettings.missionID = s_missionID + 10;
-    USER_LOG_DEBUG("Generate mission id:%d", missionInitSettings.missionID);
+    USER_LOG_DEBUG("Generate mission id:%d.\n", missionInitSettings.missionID);
     missionInitSettings.repeatTimes = 0;
-    missionInitSettings.finishedAction = DJI_WAYPOINT_V2_FINISHED_CONTINUE_UNTIL_STOP;
-    // missionInitSettings.finishedAction = DJI_WAYPOINT_V2_FINISHED_AUTO_LANDING;
+    // missionInitSettings.finishedAction = DJI_WAYPOINT_V2_FINISHED_CONTINUE_UNTIL_STOP;
+    missionInitSettings.finishedAction = DJI_WAYPOINT_V2_FINISHED_AUTO_LANDING;
     missionInitSettings.maxFlightSpeed = 14;
     missionInitSettings.autoFlightSpeed = 1;
-    missionInitSettings.actionWhenRcLost = DJI_WAYPOINT_V2_MISSION_STOP_WAYPOINT_V2_AND_EXECUTE_RC_LOST_ACTION; // 遥控信号丢失时返航
+    missionInitSettings.actionWhenRcLost = DJI_WAYPOINT_V2_MISSION_KEEP_EXECUTE_WAYPOINT_V2; // 遥控信号丢失时返航
     missionInitSettings.gotoFirstWaypointMode = DJI_WAYPOINT_V2_MISSION_GO_TO_FIRST_WAYPOINT_MODE_SAFELY; // 安全前往航路点。如果当前高度低于航路点高度，飞机将上升到航路点的相同高度。然后，它从当前高度转到航路点坐标，并继续到航路点的高度。
     printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++test_waypoint_v2.c\n");
     missionInitSettings.mission = DjiTest_WaypointV2GeneratePolygonWaypointV2(waypointLat, waypointLon);
@@ -700,7 +703,7 @@ static T_DjiReturnCode DjiTest_WaypointV2UploadMission(dji_f64_t waypointLat, dj
 
     returnCode = DjiWaypointV2_UploadMission(&missionInitSettings);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Init waypoint V2 mission setting failed, ErrorCode:0x%lX", returnCode);
+        USER_LOG_ERROR("Init waypoint V2 mission setting failed, ErrorCode:0x%lX.\n", returnCode);
         goto out;
     }
 
@@ -712,14 +715,14 @@ out:
 
 static void *DjiTest_FlightControlForceLandingTask(void *arg)
 {
-    USER_LOG_DEBUG("Init flight Control Sample");
+    USER_LOG_DEBUG("Init flight Control Sample.\n");
     T_DjiReturnCode returnCode;
     T_DjiFlightControllerRidInfo ridInfo = {0};
 
     T_DjiOsalHandler *s_osalHandler  = DjiPlatform_GetOsalHandler();
     if (!s_osalHandler)
     {
-        USER_LOG_ERROR("DjiPlatform_GetOsalHandler error.");
+        USER_LOG_ERROR("DjiPlatform_GetOsalHandler error.\n");
         replyProgress(client, false, false, schedule, orderid, droneid);
         return NULL;
     }
@@ -731,7 +734,7 @@ static void *DjiTest_FlightControlForceLandingTask(void *arg)
     {
         returnCode = DjiFlightController_Init(ridInfo);
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX", returnCode);
+            USER_LOG_ERROR("Init flight controller module failed, error code:0x%08llX.\n", returnCode);
             // goto out;
             replyProgress(client, false, false, schedule, orderid, droneid);
             return NULL;
@@ -746,7 +749,7 @@ static void *DjiTest_FlightControlForceLandingTask(void *arg)
     //     return returnCode;
     // }
 
-    USER_LOG_INFO("Flight control force-landing sample start");
+    USER_LOG_INFO("Flight control force-landing sample start.\n");
     // // RC must be in p-mode.
     // USER_LOG_INFO("--> Step 1: Obtain joystick control authority");
     // returnCode = DjiFlightController_ObtainJoystickCtrlAuthority();
@@ -761,14 +764,14 @@ static void *DjiTest_FlightControlForceLandingTask(void *arg)
     E_DjiFlightControllerObstacleAvoidanceEnableStatus enableStatus;
     returnCode = DjiFlightController_GetDownwardsVisualObstacleAvoidanceEnableStatus(&enableStatus);
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error");
+        USER_LOG_ERROR("get downwards visual obstacle avoidance enable status error.\n");
     }
 
     /*Start landing */
     USER_LOG_INFO("Start landing action");
     returnCode = DjiFlightController_StartLanding();
     if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Fail to execute auto landing action, error code: 0x%08X", returnCode);
+        USER_LOG_ERROR("Fail to execute auto landing action, error code: 0x%08X.\n", returnCode);
         replyProgress(client, false, false, schedule, orderid, droneid);
         // return false;
         goto out;
@@ -781,64 +784,64 @@ static void *DjiTest_FlightControlForceLandingTask(void *arg)
     }
 
     if (actionNotStarted == timeoutCycles) {
-        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+        USER_LOG_ERROR("%s start failed, now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING)].displayModeStr,
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
                             dMode)].displayModeStr);
         replyProgress(client, false, false, schedule, orderid, droneid);
         goto out;
     } else {
-        USER_LOG_INFO("Now flight is in %s.",
+        USER_LOG_INFO("Now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
         while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_LANDING &&
             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
             s_osalHandler->TaskSleepMs(1000);
-            if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
-                break;
-            }
+            // if ((dji_f64_t) 0.65 < relHeight && relHeight < (dji_f64_t) 0.75) {
+            //     break;
+            // }
         }
     }
     /*Confirm Landing */
-    USER_LOG_INFO("Start confirm Landing and avoid ground action");
-    returnCode = DjiFlightController_StartConfirmLanding();
-    if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-        USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
-        replyProgress(client, false, false, schedule, orderid, droneid);
-        goto out;
-    }
-    if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
-        actionNotStarted = 0;
-        timeoutCycles = 20;
-        while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
-            actionNotStarted++;
-            s_osalHandler->TaskSleepMs(100);
-        }
+    USER_LOG_INFO("Start confirm Landing and avoid ground action.\n");
+    // returnCode = DjiFlightController_StartConfirmLanding();
+    // if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
+    //     USER_LOG_ERROR("Fail to execute confirm landing avoid ground action, error code: 0x%08X", returnCode);
+    //     replyProgress(client, false, false, schedule, orderid, droneid);
+    //     goto out;
+    // }
+    // if (enableStatus == DJI_FLIGHT_CONTROLLER_ENABLE_OBSTACLE_AVOIDANCE) {
+    //     actionNotStarted = 0;
+    //     timeoutCycles = 20;
+    //     while (dMode != DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING && actionNotStarted < timeoutCycles) {
+    //         actionNotStarted++;
+    //         s_osalHandler->TaskSleepMs(100);
+    //     }
 
-        if (actionNotStarted == timeoutCycles) {
-            USER_LOG_ERROR("%s start failed, now flight is in %s.",
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
-                                dMode)].displayModeStr);
-            replyProgress(client, false, false, schedule, orderid, droneid);
-            goto out;
-        } else {
-            USER_LOG_INFO("Now flight is in %s.",
-                            s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
-            while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
-                stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
-                s_osalHandler->TaskSleepMs(1000);
-            }
-        }
-    } else {
-        while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
-            stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
-            s_osalHandler->TaskSleepMs(1000);
-        }
-    }
+    //     if (actionNotStarted == timeoutCycles) {
+    //         USER_LOG_ERROR("%s start failed, now flight is in %s.",
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING)].displayModeStr,
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
+    //                             dMode)].displayModeStr);
+    //         replyProgress(client, false, false, schedule, orderid, droneid);
+    //         goto out;
+    //     } else {
+    //         USER_LOG_INFO("Now flight is in %s.",
+    //                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
+    //         while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+    //             stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+    //             s_osalHandler->TaskSleepMs(1000);
+    //         }
+    //     }
+    // } else {
+    //     while (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_FORCE_AUTO_LANDING &&
+    //         stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR) {
+    //         s_osalHandler->TaskSleepMs(1000);
+    //     }
+    // }
     /*Landing finished check*/
     if (dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_P_GPS ||
         dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_ATTITUDE) {
-        USER_LOG_INFO("Successful landing");
+        USER_LOG_INFO("Successful landing.\n");
     } else {
         USER_LOG_ERROR("Landing finished, but the aircraft is in an unexpected mode. "
                        "Please connect DJI Assistant.");
@@ -866,19 +869,19 @@ static void *DjiTest_FlightControlForceLandingTask(void *arg)
     // }
 
 out:
-    USER_LOG_DEBUG("Deinit Flight Control Sample");
+    USER_LOG_DEBUG("Deinit Flight Control Sample.\n");
     if(initializedController)
     {
         returnCode = DjiFlightController_DeInit();
         if (returnCode != DJI_ERROR_SYSTEM_MODULE_CODE_SUCCESS) {
-            USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX",
+            USER_LOG_ERROR("Deinit flight controller module failed, error code:0x%08llX.\n",
                         returnCode);
             return NULL;
         } else {
             initializedController = false;
         }
     }
-    USER_LOG_INFO("Flight control force-landing sample end");
+    USER_LOG_INFO("Flight control force-landing sample end.\n");
 }
 
 static void *DjiTest_CloseCabinTask(void* arg)
@@ -894,13 +897,13 @@ static void *DjiTest_CloseCabinTask(void* arg)
     }
 
     if (actionNotStarted == timeoutCycles) {
-        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+        USER_LOG_ERROR("%s start failed, now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_TAKEOFF)].displayModeStr,
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
                             dMode)].displayModeStr);
         return NULL;
     } else {
-        USER_LOG_INFO("Now flight is in %s.",
+        USER_LOG_INFO("Now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
         while (stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
             dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_AUTO_TAKEOFF) {
@@ -916,20 +919,20 @@ static void *DjiTest_CloseCabinTask(void* arg)
     }
 
     if (actionNotStarted == timeoutCycles) {
-        USER_LOG_ERROR("%s start failed, now flight is in %s.",
+        USER_LOG_ERROR("%s start failed, now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(DJI_FC_SUBSCRIPTION_DISPLAY_MODE_RESERVED_14)].displayModeStr,
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(
                             dMode)].displayModeStr);
         return NULL;
     } else {
-        USER_LOG_INFO("Now flight is in %s.",
+        USER_LOG_INFO("Now flight is in %s.\n",
                         s_flightControlDisplayModeStr[DjiTest_FlightControlGetDisplayModeIndex(dMode)].displayModeStr);
         while (stationary == DJI_FC_SUBSCRIPTION_FLIGHT_STATUS_IN_AIR &&
             dMode == DJI_FC_SUBSCRIPTION_DISPLAY_MODE_RESERVED_14) {
             if(closeCabinHeight >= 20)
             {
                 control_airport(2);
-                USER_LOG_INFO("The cabin cover has been opened\n.");
+                USER_LOG_INFO("The cabin cover has been opened.\n");
                 break;
             }
             s_osalHandler->TaskSleepMs(100);// waiting for this action finished
